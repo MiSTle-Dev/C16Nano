@@ -1,0 +1,5 @@
+*.gprj.user
+*.bak
+impl/gwsynthesis/**
+impl/temp/**
+impl/pnr/**
