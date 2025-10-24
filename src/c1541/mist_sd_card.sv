@@ -22,7 +22,7 @@
 
 module mist_sd_card
 (
-	input         clk,
+	input         clk,   //32 Mhz Disk
 	input         reset,
 
 	output [31:0] sd_lba,
@@ -30,7 +30,8 @@ module mist_sd_card
 	output reg    sd_wr,
 	input         sd_ack,
 
-	input   [8:0] sd_buff_addr,
+	input         clk2,  // 28Mhz core
+	input   [8:0] sd_buff_addr, 
 	input   [7:0] sd_buff_dout,
 	output  [7:0] sd_buff_din,
 	input         sd_buff_wr,
@@ -54,6 +55,13 @@ module mist_sd_card
 	output reg    raw,
 	output reg    busy
 );
+reg busyi;
+reg  [7:0] id1i;
+reg  [7:0] id2i;
+reg  [1:0] freqi;
+reg [15:0] raw_track_leni;
+reg  [6:0] max_tracki;
+reg    rawi;
 
 wire [9:0] start_sectors[42] =
 		'{  0,  0, 21, 42, 63, 84,105,126,147,168,189,210,231,252,273,294,315,336,357,376,395,
@@ -77,7 +85,7 @@ reg   [4:0] rel_lba;
 reg   [4:0] track_lbas;
 
 reg         new_disk;
-wire  [6:0] new_track = new_disk ? raw ? 7'b1111111 : {6'h12, 1'b0} : track;
+wire  [6:0] new_track = new_disk ? rawi ? 7'b1111111 : {6'h12, 1'b0} : trackD2;
 
 reg   [8:0] sector_offset;
 
@@ -87,33 +95,33 @@ reg saving = 0;
 reg old_ack;
 reg old_change;
 
-always @(posedge clk) begin
+always @(posedge clk2) begin
 
 	old_ack <= sd_ack;
 	if(sd_ack) {sd_rd,sd_wr} <= 0;
 
-	old_change <= change;
-	if(~old_change & change) begin
-		ready <= mount;
+	old_change <= changeD2;
+	if(~old_change & changeD2) begin
+		ready <= mountD2;
 		saving <= 0;
-		busy <= 0;
-		id1 <= 8'h20;
-		id2 <= 8'h20;
-		new_disk <= mount;
-		raw <= g64;
-		if(!g64) max_track <= 7'd80;
+		busyi <= 0;
+		id1i <= 8'h20;
+		id2i <= 8'h20;
+		new_disk <= mountD2;
+		rawi <= g64;
+		if(!g64) max_tracki <= 7'd80;
 		{g64_rd, g64_wr} <= 0;
 	end
 	else
-	if(reset) begin
+	if(resetD2) begin
 		cur_track <= 'b1111111;
-		busy  <= 0;
+		busyi  <= 0;
 		sd_rd <= 0;
 		sd_wr <= 0;
 		saving<= 0;
-		id1   <= 8'h20;
-		id2   <= 8'h20;
-		new_disk <= 0;
+		id1i   <= 8'h20;
+		id2i   <= 8'h20;
+		new_disk <= 0;	
 		{g64_rd, g64_wr} <= 0;
 	end
 	else
@@ -124,10 +132,10 @@ always @(posedge clk) begin
 			lba <= g64_offsets_dout[23:9];
 			track_lbas <= 5'd1; // will read later
 			sd_rd <= 1;
-			busy <= 1;
+			busyi <= 1;
 		end
 		else
-			raw_track_len <= 0;
+			raw_track_leni <= 0;
 	end
 	else
 	if(g64_wr) begin
@@ -138,20 +146,20 @@ always @(posedge clk) begin
 			lba <= g64_offsets_dout[23:9];
 			saving <= 1;
 			sd_wr <= 1;
-			busy <= 1;
+			busyi <= 1;
 		end
 	end
 	else
-	if(busy) begin
+	if(busyi) begin
 		// BAM offset A2 and A3 -> header ID1,ID2
-		if(!raw && cur_track == {5'h12, 1'b0} && rel_lba == 0 && !saving && sd_buff_wr) begin
-			if (sd_buff_addr == 9'h1a2) id1 <= sd_buff_dout;
-			else if (sd_buff_addr == 9'h1a3) id2 <= sd_buff_dout;
+		if(!rawi && cur_track == {5'h12, 1'b0} && rel_lba == 0 && !saving && sd_buff_wr) begin
+			if (sd_buff_addr == 9'h1a2) id1i <= sd_buff_dout;
+			else if (sd_buff_addr == 9'h1a3) id2i <= sd_buff_dout;
 		end
 
 		// scan G64 track offsets
-		if(raw && cur_track == 'b1111111 && !saving && sd_buff_wr) begin
-			if ({rel_lba, sd_buff_addr} == 14'h9) max_track <= sd_buff_dout[6:0];
+		if(rawi && cur_track == 'b1111111 && !saving && sd_buff_wr) begin
+			if ({rel_lba, sd_buff_addr} == 14'h9) max_tracki <= sd_buff_dout[6:0];
 			// track offsets
 			if ({rel_lba, sd_buff_addr} >= 14'hc && {rel_lba, sd_buff_addr} <= 14'h15b)
 			case (sd_buff_addr[1:0])
@@ -166,10 +174,10 @@ always @(posedge clk) begin
 				freq_table[{rel_lba, sd_buff_addr[8:2]} - 8'h55] <= sd_buff_dout[1:0];
 		end
 		// G64 track length
-		if(raw && cur_track != 'b1111111 && !saving && sd_buff_wr) begin
+		if(rawi && cur_track != 'b1111111 && !saving && sd_buff_wr) begin
 			if ({rel_lba, sd_buff_addr} == sector_offset) g64_tlen_lo[7:0] <= sd_buff_dout;
 			if ({rel_lba, sd_buff_addr} == sector_offset + 1'd1) begin
-				raw_track_len <= {sd_buff_dout, g64_tlen_lo};
+				raw_track_leni <= {sd_buff_dout, g64_tlen_lo};
 				track_lbas <= 5'((sector_offset + 2'd2 + {sd_buff_dout, g64_tlen_lo} + 9'd511) >> 4'd9);
 			end
 		end
@@ -182,33 +190,33 @@ always @(posedge clk) begin
 					else sd_rd <= 1;
 			end
 			else
-			if(saving && ((cur_track[6:1] != track[6:1]) || (raw && cur_track[0] != track[0]))) begin
+			if(saving && ((cur_track[6:1] != trackD2[6:1]) || (rawi && cur_track[0] != trackD2[0]))) begin
 				saving <= 0;
-				cur_track <= track;
+				cur_track <= trackD2;
 				rel_lba <= 0;
-				if (raw) begin
-					g64_track_idx <= track;
+				if (rawi) begin
+					g64_track_idx <= trackD2;
 					g64_rd <= 1;
 				end
 				else begin
-					sector_offset <= { start_sectors[track[6:1]][0], 8'd0 } ;
-					lba <= start_sectors[track[6:1]][9:1];
-					track_lbas <= 5'((start_sectors[track[6:1]+1'd1] - start_sectors[track[6:1]] + 1'd1) >> 1'd1);
+					sector_offset <= { start_sectors[trackD2[6:1]][0], 8'd0 } ;
+					lba <= start_sectors[trackD2[6:1]][9:1];
+					track_lbas <= 5'((start_sectors[trackD2[6:1]+1'd1] - start_sectors[trackD2[6:1]] + 1'd1) >> 1'd1);
 					sd_rd <= 1;
 				end
 			end
 			else
 			begin
-				freq <= freq_table[cur_track];
-				busy <= 0;
+				freqi <= freq_table[cur_track];
+				busyi <= 0;
 			end
 		end
 	end
 	else
 	if(ready) begin
-		if(save_track && cur_track != 'b1111111) begin
+		if(save_trackD2 && cur_track != 'b1111111) begin
 			rel_lba <= 0;
-			if (raw) begin
+			if (rawi) begin
 				g64_track_idx <= cur_track;
 				g64_wr <= 1;
 			end
@@ -216,22 +224,22 @@ always @(posedge clk) begin
 				saving <= 1;
 				lba <= start_sectors[cur_track[6:1]][9:1];
 				sd_wr <= 1;
-				busy <= 1;
+				busyi <= 1;
 			end
 		end
 		else
-		if((cur_track[6:1] != track[6:1]) || (raw && cur_track[0] != track[0]) || new_disk) begin
+		if((cur_track[6:1] != trackD2[6:1]) || (rawi && cur_track[0] != trackD2[0]) || new_disk) begin
 			saving <= 0;
 			new_disk <= 0;
 			rel_lba <= 0;
 			cur_track <= new_track;
-			if (raw) begin
+			if (rawi) begin
 				// G64 support
 				if (new_disk) begin
 					lba <= 0; // read header
 					track_lbas <= 5'd2;
 					sd_rd <= 1;
-					busy <= 1;
+					busyi <= 1;
 				end
 				else begin
 					g64_track_idx <= new_track;
@@ -243,7 +251,7 @@ always @(posedge clk) begin
 				lba <= start_sectors[new_track[6:1]][9:1];
 				track_lbas <= 5'((start_sectors[new_track[6:1]+1'd1] - start_sectors[new_track[6:1]] + 1'd1) >> 1'd1);
 				sd_rd <= 1;
-				busy <= 1;
+				busyi <= 1;
 			end
 		end
 	end
@@ -264,7 +272,7 @@ wire   [7:0] track_buffer_b_do_fd;
 Gowin_DPB_trkbuf trkbuf_inst(
 	.douta(track_buffer_do_sd), 
 	.doutb(track_buffer_do_fd), 
-	.clka(clk), 
+	.clka(clk2), 
 	.ocea(1'b1), 
 	.cea(1'b1), 
 	.reseta(1'b0), 
@@ -283,7 +291,7 @@ Gowin_DPB_trkbuf trkbuf_inst(
 Gowin_DPB_track_buffer_b trkbuf_inst_b(
 	.douta(track_buffer_b_do_sd), 
 	.doutb(track_buffer_b_do_fd), 
-	.clka(clk), 
+	.clka(clk2), 
 	.ocea(1'b1), 
 	.cea(1'b1), 
 	.reseta(1'b0), 
@@ -301,5 +309,41 @@ Gowin_DPB_track_buffer_b trkbuf_inst_b(
 
 assign ram_do = fd_ram_addr[13] ? track_buffer_b_do_fd : track_buffer_do_fd;
 assign sd_buff_din = sd_ram_addr[13] ? track_buffer_b_do_sd : track_buffer_do_sd;
+
+reg resetD, resetD2;
+reg changeD, changeD2, mountD, mountD2, save_trackD, save_trackD2;
+reg [6:0] trackD, trackD2;
+
+always@(posedge clk2) begin : FDD_IN
+// input synchronisers
+// bring flags from core clock domain into system clock domain
+{ resetD, resetD2 } <= { reset, resetD };
+{ changeD, changeD2 } <= { change, changeD };
+{ mountD, mountD2 } <= { mount, mountD };
+{ save_trackD, save_trackD2 } <= { save_track, save_trackD };
+{ trackD, trackD2 } <= { track, trackD };
+end
+
+reg busyD;
+reg  [7:0] id1D;
+reg  [7:0] id2D;
+reg  [1:0] freqD;
+reg [15:0] raw_track_lenD;
+reg  [6:0] max_trackD;
+reg    rawD;
+
+always@(posedge clk) begin : FDD_OUT
+// output synchronisers
+// bring flags from system clock domain into core clock domain
+ { busyD, busy } <= { busyi, busyD };
+ { id1D, id1 } <= { id1i, id1D };
+ { id2D, id2 } <= { id2i, id2D };
+ { freqD, freq } <= { freqi, freqD };
+ { raw_track_lenD, raw_track_len } <= { raw_track_leni, raw_track_lenD };
+ { max_trackD, max_track } <= { max_tracki, max_trackD };
+ { rawD, raw } <= { rawi, rawD };	
+
+end
+
 
 endmodule

@@ -7,7 +7,7 @@ The C16Nano is a port of the [MiSTer](https://github.com/MiSTer-devel/C16_MiSTer
 | ---        |        -   | -     |-|
 | [Tang Console 60K NEO](https://wiki.sipeed.com/hardware/en/tang/tang-console/mega-console.html)|[GW5AT-60](https://www.gowinsemi.com/en/product/detail/60/) | HDMI / LCD |twin Dualshock, no Retro D9 Joystick|
 
-This project relies on a MPU being connected to the FPGA. --> [MiSTle-Dev wiki](https://github.com/MiSTle-Dev/.github/wiki) <--  
+This project relies on a MPU being connected to the FPGA (onboard BL616 or external one). --> [MiSTle-Dev wiki](https://github.com/MiSTle-Dev/.github/wiki) <--  
 
 ...still a work in progress !  
 
@@ -25,7 +25,7 @@ This port has the following changes and enhancements:
 * loadable C1541 DOS as selection from Tang Flash memory
 * Joystick with swap function
 * [USB Joystick](https://en.wikipedia.org/wiki/Joystick) or [USB Gamepad](https://en.wikipedia.org/wiki/Gamepad)
-* [USB XBOX 360 Controller](https://en.wikipedia.org/wiki/Xbox_360_controller) as Joystick or Paddle
+* [USB XBOX 360 Controller](https://en.wikipedia.org/wiki/Xbox_360_controller) as Joystick
 * Joystick emulation on Keyboard Numpad
 
 Original C16 core by [Istvan Hegedus](https://github.com/ishe).  
