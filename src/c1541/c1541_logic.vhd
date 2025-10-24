@@ -140,32 +140,22 @@ architecture SYN of c1541_logic is
 
   signal cpu_b_slice    : std_logic_vector(2 downto 0);
   signal extram_cs      : std_logic;
-  signal extram_do      : std_logic_vector(7 downto 0);
+  signal extram_do      : std_logic_vector(7 downto 0) := x"FF";
   signal extram_wr      : std_logic;
 
   begin
 
   reset_n <= not reset;
-  
---flux_comp_inst :  entity work.c1541_flux
---port map (
---  clk      => clk_32M,
---  pause    => pause,
---  ce       => ce,
 
---  p2_h_r    => p2_h_r,
---  p2_h_f    => p2_h_f,
---  clk_1M_pulse => clk_1M_pulse
---);
   process (clk_32M)
     variable count  : std_logic_vector(4 downto 0) := (others => '0');
   begin
     if rising_edge(clk_32M) then
         if pause = '0' then count := std_logic_vector(unsigned(count) + 1); end if;
     end if;
-  if count = "10000" then clk_1M_pulse <= '1'; else clk_1M_pulse <='0' ; end if;
-  if count = "00000" then p2_h_r <= '1'; else p2_h_r <='0' ; end if;
-  if count = "10000" then p2_h_f <= '1'; else p2_h_f <='0' ; end if;
+    if count = "10000" then clk_1M_pulse <= '1'; else clk_1M_pulse <='0' ; end if;
+    if count = "00000" then p2_h_r <= '1'; else p2_h_r <='0' ; end if;
+    if count = "10000" then p2_h_f <= '1'; else p2_h_f <='0' ; end if;
   end process;
 
   -- decode logic
@@ -209,18 +199,17 @@ architecture SYN of c1541_logic is
   rom_do <= c1541rom_data;
   
 -- 8k extra sram extension for dolphin dos
---ram_8kinst :  entity work.Gowin_SP_8k
---port map (
---    dout => extram_do,
---    clk => clk_32M,
---    oce => '1',
---    ce => ext_en,
---    reset => reset,
---    wre => extram_wr,
---    ad => cpu_a(12 downto 0),
---    din => cpu_do
---);
-extram_do <= x"FF";
+ram_8kinst :  entity work.Gowin_SP_8k
+port map (
+    dout => extram_do,
+    clk => clk_32M,
+    oce => '1',
+    ce => ext_en,
+    reset => reset,
+    wre => extram_wr,
+    ad => cpu_a(12 downto 0),
+    din => cpu_do
+);
 
   --
   -- hook up UC1 ports

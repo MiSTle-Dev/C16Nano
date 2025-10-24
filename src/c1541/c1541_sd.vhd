@@ -28,6 +28,7 @@ use ieee.numeric_std.all;
 entity c1541_sd is
 port(
 	clk32 : in std_logic;
+	clk2  : in std_logic;
 	reset : in std_logic;
     pause : in std_logic;
     ce    : in std_logic;
@@ -43,7 +44,6 @@ port(
 	iec_data_i : in std_logic;
 	iec_clk_i  : in std_logic;
 	
-	iec_atn_o  : out std_logic;
 	iec_data_o : out std_logic;
 	iec_clk_o  : out std_logic;
 	
@@ -108,9 +108,14 @@ signal max_track : std_logic_vector(6 downto 0);
 signal wps_flag : std_logic;
 signal change_timer : integer;
 signal mounted : std_logic := '0';
+signal disk_mountD2, disk_mountD : std_logic;
+signal disk_changeD2, disk_changeD : std_logic;
+signal tr00_sense_n : std_logic;
 
 begin
-	
+
+tr00_sense_n <='0' when new_track_num_dbl = 7x"00" else '1';
+
   c1541 : entity work.c1541_logic
   generic map
   (
@@ -126,7 +131,7 @@ begin
     -- serial bus
     sb_data_oe => iec_data_o,
     sb_clk_oe  => iec_clk_o,
-    sb_atn_oe  => iec_atn_o,
+    sb_atn_oe  => open,
 		
     sb_data_in => iec_data_i,
     sb_clk_in  => iec_clk_i,
@@ -148,7 +153,7 @@ begin
     sync_n          => sync_n,   -- reading SYNC bytes
     byte_n          => byte_n,   -- byte ready
     wps_n           => not wps_flag,      -- write-protect sense (0 = protected)
-    tr00_sense_n    => '1',      -- track 0 sense (unused?)
+    tr00_sense_n    => tr00_sense_n, -- track 0 sense
     act             => act,      -- activity LED
 
     ext_en          => ext_en,
@@ -166,7 +171,6 @@ port map
 	c1541_logic_dout => c1541_logic_dout, -- data to write
 	 
 	mode   => mode,   -- read/write
---    stp    => stp,  -- stepper motor control
 	mtr    => mtr,    -- stepper motor on/off
 	freq   => freq,   -- motor (gcr_bit) frequency
 	sync_n => sync_n, -- reading SYNC bytes
@@ -213,6 +217,7 @@ port map
 	g64           => disk_g64,
 	max_track     => max_track,
 
+	clk2          => clk2,
 	sd_buff_addr  => sd_buff_addr,
 	sd_buff_dout  => sd_buff_dout,
 	sd_buff_din   => sd_buff_din,
@@ -224,31 +229,16 @@ port map
 	sd_ack        => sd_ack
 );
 
---sd_spi : entity work.spi_controller
---port map
---(
---	cs_n => sd_cs_n,  --: out std_logic; -- MMC chip select
---	mosi => sd_mosi,  --: out std_logic; -- Data to card (master out slave in)
---	miso => sd_miso,  --: in  std_logic; -- Data from card (master in slave out)
---	sclk => sd_sclk,  --: out std_logic; -- Card clock
---	bus_available => bus_available,
---
---	ram_addr => spi_ram_addr, -- out unsigned(13 downto 0);
---	ram_di   => spi_ram_di,   -- out unsigned(7 downto 0);
---	ram_do   => ram_do,       -- in  unsigned(7 downto 0);
---	ram_we   => spi_ram_we,
---		
---	track_num     => new_track_num_dbl(6 downto 1),
---	disk_num      => disk_num,
---	busy          => sd_busy,
---	save_track    => save_track,
---	sector_offset => sector_offset,
---
---	clk => clk_spi_ctrlr,
---	reset => reset,
---
---	dbg_state => dbg_sd_state
---);
+-- synchronize disk change and mount signals
+process (clk32)
+ begin
+ if rising_edge(clk32) then
+  disk_mountD  <= disk_mount;
+  disk_mountD2 <= disk_mountD;
+  disk_changeD <= disk_change;
+  disk_changeD2 <= disk_changeD;
+ end if;
+end process;
 
 wps_flag <= disk_readonly when change_timer = 0 else not disk_readonly;
 
@@ -257,8 +247,8 @@ begin
 	if reset = '1' then
 		change_timer <= 0;
 	elsif rising_edge(clk32) then
-		if disk_change = '1' then
-			mounted <= disk_mount;
+		if disk_changeD2 = '1' then
+			mounted <= disk_mountD2;
 			change_timer <= 1000000;
 		elsif change_timer /= 0 then
 			change_timer <= change_timer - 1;
