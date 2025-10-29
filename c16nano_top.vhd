@@ -189,6 +189,7 @@ signal int_ack        : std_logic_vector(7 downto 0);
 signal spi_io_din     : std_logic;
 signal spi_io_ss      : std_logic;
 signal spi_io_clk     : std_logic;
+attribute syn_keep of spi_io_clk : signal is 1;
 signal spi_io_dout    : std_logic;
 signal disk_g64       : std_logic;
 signal disk_g64_d     : std_logic;
@@ -314,7 +315,6 @@ signal state            : std_logic_vector(3 downto 0) := "0000";
 signal xreset, xrst     : std_logic;
 signal palmode          : std_logic;
 signal clk32            : std_logic;
-signal iec_atn_os, iec_data_os, iec_clk_os : std_logic;
 
 component CLKDIV
     generic (
@@ -490,10 +490,6 @@ process(clk_sys, pll_locked)
   end if;
 end process;
 
-sync_inst1 : entity work.iecdrv_sync port map(clk32, iec_atn_o,  iec_atn_os);
-sync_inst2 : entity work.iecdrv_sync port map(clk32, iec_data_o, iec_data_os);
-sync_inst3 : entity work.iecdrv_sync port map(clk32, iec_clk_o,  iec_clk_os);
-
 c1541_sd_inst : entity work.c1541_sd
 port map
  (
@@ -509,9 +505,9 @@ port map
     disk_readonly => system_floppy_wprot(0),
     disk_g64      => '0',
 
-    iec_atn_i     => iec_atn_os,
-    iec_data_i    => iec_data_os,
-    iec_clk_i     => iec_clk_os,
+    iec_atn_i     => iec_atn_o,
+    iec_data_i    => iec_data_o,
+    iec_clk_i     => iec_clk_o,
 
     iec_data_o    => iec_data_i,
     iec_clk_o     => iec_clk_i,
@@ -1081,8 +1077,10 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	IEC_ATNOUT   => iec_atn_o,
 	IEC_DATAOUT  => iec_data_o,
 	IEC_CLKOUT   => iec_clk_o,
-	IEC_RESET    => c16_iec_reset_o
-);
+	IEC_RESET    => c16_iec_reset_o,
+  RS232_RX     => uart_rx, -- future 
+  RS232_TX     => open  -- future
+  );
 
 process(clk_sys)
 begin

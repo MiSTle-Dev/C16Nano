@@ -111,8 +111,19 @@ signal mounted : std_logic := '0';
 signal disk_mountD2, disk_mountD : std_logic;
 signal disk_changeD2, disk_changeD : std_logic;
 signal tr00_sense_n : std_logic;
+signal iec_data_d: std_logic;
+signal iec_clk_d : std_logic;
+signal iec_atn, iec_data, iec_clk, reset_drv : std_logic;
 
 begin
+
+sync_inst1 : entity work.iecdrv_sync port map(clk32, iec_atn_i,  iec_atn);
+sync_inst2 : entity work.iecdrv_sync port map(clk32, iec_data_i, iec_data);
+sync_inst3 : entity work.iecdrv_sync port map(clk32, iec_clk_i,  iec_clk);
+sync_inst4 : entity work.iecdrv_sync port map(clk32, reset,  reset_drv);
+
+iec_clk_o  <= iec_clk_d  or reset_drv;
+iec_data_o <= iec_data_d or reset_drv;
 
 tr00_sense_n <='0' when new_track_num_dbl = 7x"00" else '1';
 
@@ -124,18 +135,17 @@ tr00_sense_n <='0' when new_track_num_dbl = 7x"00" else '1';
   port map
   (
     clk_32M => clk32,
-    reset => reset,
+    reset => reset_drv,
     pause => pause,
     ce    => ce,
 
     -- serial bus
-    sb_data_oe => iec_data_o,
-    sb_clk_oe  => iec_clk_o,
-    sb_atn_oe  => open,
+    sb_data_oe => iec_data_d,
+    sb_clk_oe  => iec_clk_d,
 		
-    sb_data_in => iec_data_i,
-    sb_clk_in  => iec_clk_i,
-    sb_atn_in  => iec_atn_i,
+    sb_data_in => iec_data and iec_data_o,
+    sb_clk_in => iec_clk and iec_clk_o,
+    sb_atn_in => iec_atn,
     -- parallel bus
     par_data_i => par_data_i,
     par_stb_i  => par_stb_i,
@@ -197,7 +207,7 @@ sd: entity work.mist_sd_card
 port map
 (
 	clk           => clk32,
-	reset         => reset,
+	reset         => reset_drv,
 
 	ram_addr      => floppy_ram_addr,
 	ram_di        => floppy_ram_di,
@@ -242,9 +252,9 @@ end process;
 
 wps_flag <= disk_readonly when change_timer = 0 else not disk_readonly;
 
-process (clk32,reset)
+process (clk32, reset_drv)
 begin
-	if reset = '1' then
+	if reset_drv = '1' then
 		change_timer <= 0;
 	elsif rising_edge(clk32) then
 		if disk_changeD2 = '1' then
@@ -262,7 +272,7 @@ begin
 		stp_r <= stp;
 		act_r <= act;
 		mode_r <= mode;
-		if reset = '1' then
+		if reset_drv = '1' then
 			track_num_dbl <= "0100100";--"0000010";
 			track_modified <= '0';
 			save_track_stage <= X"0";
