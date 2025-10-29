@@ -78,18 +78,21 @@ module C16
 	output [15:0] sound,
 	input   [1:0] sid_type,
 
-	output        PAL
+	output        PAL,
+	input         RS232_RX,
+	output        RS232_TX
 );
 
 wire [15:0] c16_addr;
 wire [15:0] ted_addr;
 wire [15:0] cpu_addr;
-wire [7:0] c16_data,ted_data,ram_data,cpu_data,port_in,port_out,keyport_data;
+wire [7:0] c16_data,ted_data,ram_data,cpu_data,port_in,port_out,keyport_data,uart_data;
 wire [7:0] keyboard_row,kbus,kbus_kbd;
 wire [6:0] c16_color;
 wire cpuenable;
 wire aec,rdy;
 wire keyboardio;
+wire uartio;
 reg sreset=1'b0;
 reg [23:0] resetcounter=24'b0;
 wire irq1;
@@ -103,7 +106,7 @@ assign kbus[5:4] = kbus_kbd[5:4]; // no joystick line connected here
 assign kbus[6] = kbus_kbd[6] & joy0_sel[4];
 assign kbus[7] = kbus_kbd[7] & joy1_sel[4];
 
-wire irq_n;
+wire irq_n, acia_irq_n;
 
 // 8501 CPU
 mos8501 cpu
@@ -111,7 +114,7 @@ mos8501 cpu
 	.clk(CLK28), 
 	.reset(sreset), 
 	.enable(cpuenable && !INWAIT),  
-	.irq_n(irq_n), 
+	.irq_n(irq_n & acia_irq_n),
 	.data_in(c16_data), 
 	.data_out(cpu_data), 
 	.address(cpu_addr),
@@ -196,6 +199,48 @@ mos6529 keyport
 );
 
 assign keyboardio=(c16_addr[15:4]==12'hfd3);		// as we don't have PLA, keyport is identified here
+assign uartio=(c16_addr[15:4]==12'hfd0); // 6551
+
+reg clk_18432en;
+reg  [31:0] clk_cnt_uart;
+wire [31:0] clk_rate = PAL ? 32'd28_375_168 : 32'd28_636_352;
+
+always @(posedge CLK28) begin
+	if(sreset) begin
+		clk_cnt_uart <= 32'd0;
+		clk_18432en <= 1'b0;
+	end else begin
+		clk_18432en <= 1'b0;
+
+		if(clk_cnt_uart < clk_rate)
+			clk_cnt_uart <= clk_cnt_uart + 32'd1_843_200;
+		else begin
+			clk_cnt_uart <= clk_cnt_uart - clk_rate + 32'd1_843_200;
+			clk_18432en <= 1'b1;
+		end
+	end
+end
+
+gen_uart_mos_6551 uart
+(
+	.reset(sreset),
+	.clk(CLK28),
+	.clk_en(clk_18432en),
+	.din(c16_data),
+	.dout(uart_data),
+	.rnw(RnW),
+	.irq_n(acia_irq_n),
+	.cs(uartio),
+	.rs(c16_addr[1:0]),
+
+	.cts_n(1'b0),
+	.rx(RS232_RX),
+	.tx(RS232_TX),
+	.dcd_n(1'b0),
+	.dsr_n(1'b0),
+	.dtr_n(),
+	.rts_n()
+);
 
 // C16 additional motherboard functions
 always @(posedge CLK28)	begin	// reset tries to emulate the length of a real reset
@@ -213,7 +258,7 @@ end
 
 // assign VSYNC=1'b1; // set scart mode to RGB for TV
 assign c16_addr=cpu_addr&ted_addr;									 // C16 address bus
-assign c16_data=cpu_data&ted_data&DIN&keyport_data;// &sid_data; // C16 data bus
+assign c16_data=cpu_data&ted_data&DIN&keyport_data&uart_data;// &sid_data; // C16 data bus
 
 assign ADDR=c16_addr;
 assign DOUT=cpu_data;

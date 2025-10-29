@@ -10,6 +10,7 @@
         <File path="src/c16_keymatrix.v" type="file.verilog" enable="1"/>
         <File path="src/colors_to_rgb.v" type="file.verilog" enable="1"/>
         <File path="src/dualshock2.v" type="file.verilog" enable="1"/>
+        <File path="src/gen_uart.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_dpb/gowin_dpb_track_buffer_b.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_dpb/gowin_dpb_trkbuf.v" type="file.verilog" enable="1"/>
         <File path="src/gowin_dpb/sector_dpram.v" type="file.verilog" enable="1"/>
@@ -40,6 +41,8 @@
         <File path="src/mos8501.v" type="file.verilog" enable="1"/>
         <File path="src/pll_init.v" type="file.verilog" enable="1"/>
         <File path="src/ted.v" type="file.verilog" enable="1"/>
+        <File path="src/uart6551/io_fifo.v" type="file.verilog" enable="1"/>
+        <File path="src/uart6551/uart_6551.v" type="file.verilog" enable="1"/>
         <File path="c16nano_top.vhd" type="file.vhdl" enable="1"/>
         <File path="src/c1541/c1541_logic.vhd" type="file.vhdl" enable="1"/>
         <File path="src/c1541/c1541_sd.vhd" type="file.vhdl" enable="1"/>
