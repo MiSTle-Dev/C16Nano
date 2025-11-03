@@ -61,7 +61,7 @@ module scandoubler
 
 parameter HCNT_WIDTH = 9; // Resolution of scandoubler buffer
 parameter COLOR_DEPTH = 4; // Bits per colour to be stored in the buffer
-parameter HSCNT_WIDTH = 12; // Resolution of hsync counters
+parameter HSCNT_WIDTH = 11; // Resolution of hsync counters
 parameter OUT_COLOR_DEPTH = 6; // Bits per color outputted
 
 // --------------------- create output signals -----------------

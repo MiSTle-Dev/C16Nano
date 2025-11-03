@@ -1,5 +1,5 @@
 -------------------------------------------------------------------------
---  C16 Plus/4 Top level for Tang Console 60k NEO
+--  C16 Plus/4 Top level for Tang Nano 20k
 --  2025 Stefan Voss
 --  based on the work of many others
 --
@@ -12,16 +12,14 @@ use IEEE.STD_LOGIC_UNSIGNED.ALL;
 use IEEE.numeric_std.ALL;
 
 entity c16nano_top is
-  generic
-  (
-   U6551 : integer := 0  -- 0:no, 1:yes optional 6551 UART
-   );
   port
   (
+    jtagseln    : out std_logic := '0';
+    reconfign   : out std_logic := 'Z';
     clk         : in std_logic;
     reset       : in std_logic; -- S2 button
     user        : in std_logic; -- S1 button
-    leds_n      : out std_logic_vector(1 downto 0);
+    leds_n      : out std_logic_vector(5 downto 0);
     -- USB-C BL616 UART
     uart_rx     : in std_logic;
     uart_tx     : out std_logic;
@@ -39,20 +37,6 @@ entity c16nano_top is
     spi_dir     : out std_logic;
     spi_dat     : in std_logic;
     spi_irqn    : out std_logic;
-    -- internal lcd
-    lcd_clk     : out std_logic; -- lcd clk
-    lcd_hs      : out std_logic; -- lcd horizontal synchronization
-    lcd_vs      : out std_logic; -- lcd vertical synchronization        
-    lcd_de      : out std_logic; -- lcd data enable     
-    lcd_bl      : out std_logic; -- lcd backlight control
-    lcd_r       : out std_logic_vector(7 downto 0);  -- lcd red
-    lcd_g       : out std_logic_vector(7 downto 0);  -- lcd green
-    lcd_b       : out std_logic_vector(7 downto 0);  -- lcd blue
-    -- audio
-    hp_bck      : out std_logic;
-    hp_ws       : out std_logic;
-    hp_din      : out std_logic;
-    pa_en       : out std_logic;
     --
     tmds_clk_n  : out std_logic;
     tmds_clk_p  : out std_logic;
@@ -62,21 +46,18 @@ entity c16nano_top is
     sd_clk      : out std_logic;
     sd_cmd      : inout std_logic;
     sd_dat      : inout std_logic_vector(3 downto 0);
-    -- MiSTer SDRAM module
-    --O_sdram_clk     : out std_logic;
-    --O_sdram_cs_n    : out std_logic; -- chip select
-    --O_sdram_cas_n   : out std_logic;
-    --O_sdram_ras_n   : out std_logic; -- row address select
-    --O_sdram_wen_n   : out std_logic; -- write enable
-    --IO_sdram_dq     : inout std_logic_vector(15 downto 0); -- 16 bit bidirectional data bus
-    --O_sdram_addr    : out std_logic_vector(12 downto 0); -- 13 bit multiplexed address bus
-    --O_sdram_ba      : out std_logic_vector(1 downto 0); -- two banks
-    --O_sdram_dqm     : out std_logic_vector(1 downto 0); -- 16/2
-    -- Gamepad Dualshock P0
-    ds_clk          : out std_logic;
-    ds_mosi         : out std_logic;
-    ds_miso         : in std_logic;
-    ds_cs           : out std_logic;
+    ws2812      : out std_logic;
+    -- "Magic" port names that the gowin compiler connects to the on-chip SDRAM
+    --O_sdram_clk  : out std_logic;
+    --O_sdram_cke  : out std_logic;
+    --O_sdram_cs_n : out std_logic;            -- chip select
+    --O_sdram_cas_n : out std_logic;           -- columns address select
+    --O_sdram_ras_n : out std_logic;           -- row address select
+    --O_sdram_wen_n : out std_logic;           -- write enable
+    --IO_sdram_dq  : inout std_logic_vector(31 downto 0); -- 32 bit bidirectional data bus
+    --O_sdram_addr : out std_logic_vector(10 downto 0);  -- 11 bit multiplexed address bus
+    --O_sdram_ba   : out std_logic_vector(1 downto 0);     -- two banks
+    --O_sdram_dqm  : out std_logic_vector(3 downto 0);     -- 32/4
     -- Gamepad DualShock P1
     ds2_clk       : out std_logic;
     ds2_mosi      : out std_logic;
@@ -95,21 +76,13 @@ end;
 
 architecture Behavioral_top of c16nano_top is
 
-signal clk_sys          : std_logic;
+signal clk_sys        : std_logic;
 signal pll_locked     : std_logic;
 signal clk_pixel_x5   : std_logic;
-signal mspi_clk_x5    : std_logic;
-signal pll_locked_ntsc: std_logic;
-signal clk_pixel_x5_ntsc  : std_logic;
-signal clk_pal      : std_logic;
-signal clk_ntsc : std_logic;
-signal pll_locked_pal : std_logic;
 signal clk_pixel_x5_pal   : std_logic;
 attribute syn_keep : integer;
-attribute syn_keep of clk_sys             : signal is 1;
+attribute syn_keep of clk_sys           : signal is 1;
 attribute syn_keep of clk_pixel_x5      : signal is 1;
-attribute syn_keep of clk_pixel_x5_pal  : signal is 1;
-attribute syn_keep of mspi_clk_x5       : signal is 1;
 attribute syn_keep of m0s               : signal is 1;
 
 signal audio_data_l  : std_logic_vector(15 downto 0);
@@ -239,6 +212,7 @@ signal key_left2       : std_logic;
 signal key_right2      : std_logic;
 signal audio_div       : unsigned(8 downto 0);
 signal flash_clk       : std_logic;
+attribute syn_keep of flash_clk : signal is 1;
 signal flash_lock      : std_logic;
 signal dcsclksel       : std_logic_vector(3 downto 0);
 signal ioctl_download  : std_logic := '0';
@@ -281,15 +255,7 @@ signal kernal0_dout     : std_logic_vector(7 downto 0);
 signal kernal0_dout_i   : std_logic_vector(7 downto 0);
 signal basic_dout       : std_logic_vector(7 downto 0);
 signal basic_dout_i     : std_logic_vector(7 downto 0);
-signal fh_dout          : std_logic_vector(7 downto 0);
-signal fh_dout_i        : std_logic_vector(7 downto 0);
-signal fl_dout          : std_logic_vector(7 downto 0);
-signal fl_dout_i        : std_logic_vector(7 downto 0);
-signal cartl_dout       : std_logic_vector(7 downto 0);
-signal cartl_dout_i     : std_logic_vector(7 downto 0);
-signal carth_dout       : std_logic_vector(7 downto 0);
-signal carth_dout_i     : std_logic_vector(7 downto 0);
-signal cass_dout        : std_logic_vector(7 downto 0);
+signal cass_dout        : std_logic_vector(7 downto 0) :=x"FF";
 signal openbus_data     : std_logic_vector(7 downto 0);
 signal c16_datalatch    : std_logic_vector(7 downto 0);
 signal openbus_sel      : std_logic;
@@ -315,10 +281,19 @@ signal state            : std_logic_vector(3 downto 0) := "0000";
 signal xreset, xrst     : std_logic;
 signal palmode          : std_logic;
 signal clk32            : std_logic;
+attribute syn_keep of clk32 : signal is 1;
+signal serial_status    : std_logic_vector(31 downto 0);
+signal serial_tx_available : std_logic_vector(7 downto 0);
+signal serial_tx_strobe : std_logic;
+signal serial_tx_data   : std_logic_vector(7 downto 0);
+signal serial_rx_available : std_logic_vector(7 downto 0);
+signal serial_rx_strobe : std_logic;
+signal serial_rx_data   : std_logic_vector(7 downto 0);
 
 component CLKDIV
     generic (
-        DIV_MODE : STRING := "2"
+        DIV_MODE : STRING := "2";
+        GSREN: in string := "false"
     );
     port (
         CLKOUT: out std_logic;
@@ -328,22 +303,11 @@ component CLKDIV
     );
 end component;
 
-component DCS
-    generic (
-        DCS_MODE : STRING := "RISING"
-    );
-    port (
-        CLKOUT: out std_logic;
-        CLKSEL: in std_logic_vector(3 downto 0);
-        CLKIN0: in std_logic;
-        CLKIN1: in std_logic;
-        CLKIN2: in std_logic;
-        CLKIN3: in std_logic;
-        SELFORCE: in std_logic
-    );
- end component;
 
 begin
+
+  jtagseln <= '0' when pll_locked = '0' or (reset and user) = '1' else '1';
+  reconfign <= 'Z';
 
   -- BL616 console to hw pins for external USB-UART adapter
   uart_tx <= bl616_mon_rx;
@@ -379,10 +343,10 @@ gamepad_p1: entity work.dualshock2
     clk           => clk_sys,
     rst           => resetc16,
     vsync         => vsync,
-    ds2_dat       => ds_miso,
-    ds2_cmd       => ds_mosi,
-    ds2_att       => ds_cs,
-    ds2_clk       => ds_clk,
+    ds2_dat       => ds2_miso,
+    ds2_cmd       => ds2_mosi,
+    ds2_att       => ds2_cs,
+    ds2_clk       => ds2_clk,
     ds2_ack       => '0',
     analog        => '0',
     stick_lx      => open,
@@ -409,39 +373,12 @@ gamepad_p1: entity work.dualshock2
     debug2        => open
     );
 
-gamepad_p2: entity work.dualshock2
-    port map (
-    clk           => clk_sys,
-    rst           => resetc16,
-    vsync         => vsync,
-    ds2_dat       => ds2_miso,
-    ds2_cmd       => ds2_mosi,
-    ds2_att       => ds2_cs,
-    ds2_clk       => ds2_clk,
-    ds2_ack       => '0',
-    analog        => '0',
-    stick_lx      => open,
-    stick_ly      => open,
-    stick_rx      => open,
-    stick_ry      => open,
-    key_up        => key_up2,
-    key_down      => key_down2,
-    key_left      => key_left2,
-    key_right     => key_right2,
-    key_l1        => key_l12,
-    key_l2        => key_l22,
-    key_r1        => key_r12,
-    key_r2        => key_r22,
-    key_triangle  => key_triangle2,
-    key_square    => key_square2,
-    key_circle    => key_circle2,
-    key_cross     => key_cross2,
-    key_start     => open,
-    key_select    => open,
-    key_lstick    => open,
-    key_rstick    => open,
-    debug1        => open,
-    debug2        => open
+    led_ws2812: entity work.ws2812
+    port map
+    (
+     clk    => clk_sys,
+     color  => ws2812_color,
+     data   => ws2812
     );
 
 process(clk_sys, disk_reset)
@@ -459,7 +396,7 @@ variable reset_cnt : integer range 0 to 2147483647;
   end if;
 end process;
 
-disk_reset <= '1' when not flash_ready or c16_iec_reset_o or c1541_osd_reset else '0';
+disk_reset <= '1' when not flash_ready or resetc16 or c16_iec_reset_o or c1541_osd_reset else '0';
 
 -- rising edge sd_change triggers detection of new disk
 process(clk_sys, pll_locked)
@@ -624,90 +561,44 @@ port map(
       tmds_clk_n => tmds_clk_n,
       tmds_clk_p => tmds_clk_p,
       tmds_d_n   => tmds_d_n,
-      tmds_d_p   => tmds_d_p,
-
-      lcd_clk  => lcd_clk,
-      lcd_hs_n => lcd_hs,
-      lcd_vs_n => lcd_vs,
-      lcd_de   => lcd_de,
-      lcd_r    => lcd_r,
-      lcd_g    => lcd_g,
-      lcd_b    => lcd_b,
-      lcd_bl   => lcd_bl,
-
-      hp_bck   => hp_bck,
-      hp_ws    => hp_ws,
-      hp_din   => hp_din,
-      pa_en    => pa_en
+      tmds_d_p   => tmds_d_p
       );
 
 -- Clock tree and all frequencies in Hz
 --
 -- NTSC 28.636299 143,181495, PAL 28.384615 141,923075
 
-clk_switch_2: DCS
-	generic map (
-		DCS_MODE => "RISING"
-	)
-	port map (
-		CLKIN0   => clk_pal,  -- main pll 1
-		CLKIN1   => clk_ntsc, -- main pll 2
-		CLKIN2   => '0',
-		CLKIN3   => '0',
-		CLKSEL   => dcsclksel,
-		SELFORCE => '0', -- glitch less mode
-		CLKOUT   => clk_sys  -- switched clock
-	);
-  
-pll_locked <= pll_locked_pal and pll_locked_ntsc;
-dcsclksel <= "0001" when ntscMode = '0' else "0010";
-
-clk_switch_1: DCS
-generic map (
-    DCS_MODE => "RISING"
-)
-port map (
-    CLKOUT => clk_pixel_x5,
-    CLKSEL => dcsclksel,
-    CLKIN0 => clk_pixel_x5_pal,
-    CLKIN1 => clk_pixel_x5_ntsc,
-    CLKIN2 => '0',
-    CLKIN3 => '0',
-    SELFORCE => '1'
-);
-
-mainclock_pal: entity work.Gowin_PLL_60k_pal
-port map (
-    lock => pll_locked_pal,
-    clkout0 => clk_pixel_x5_pal,
-    clkout1 => clk_pal,
-    clkout2 => open,
-    clkout3 => open,
-    clkin => clk,
-    mdclk => clk
-  );
-
-mainclock_ntsc: entity work.Gowin_PLL_60k_ntsc
-port map (
-    lock => pll_locked_ntsc,
-    clkout0 => clk_pixel_x5_ntsc,
-    clkout1 => clk_ntsc,
-    clkin => clk,
-    mdclk => clk
-);
-
-flashclock: entity work.Gowin_PLL_60k_flash
+mainclock_pal: entity work.Gowin_rPLL_pal
     port map (
-        clkin => clk,
-        clkout0 => flash_clk,
-        clkout1 => mspi_clk,
-        clkout2 => clk32,
-        lock => flash_lock,
-        mdclk => clk
+        clkout => clk_pixel_x5,
+        lock => pll_locked,
+        clkin => clk
     );
 
-leds_n(1 downto 0) <= not leds(1 downto 0);
-leds(1) <= '0';
+div_inst: CLKDIV
+generic map(
+    DIV_MODE => "5",
+    GSREN    => "false"
+)
+port map(
+    CLKOUT => clk_sys,
+    HCLKIN => clk_pixel_x5,
+    RESETN => pll_locked,
+    CALIB  => '0'
+);
+
+flash_pll_inst: entity work.Gowin_rPLL_flash
+    port map (
+        clkout  => flash_clk,
+        lock    => flash_lock,
+        clkoutp => mspi_clk,
+        clkoutd => clk32,
+        clkin   => clk
+    );
+
+
+leds_n(5 downto 0) <= not leds(5 downto 0);
+leds(5 downto 1) <= (others => '0');
 leds(0) <= led1541; -- green
 
 --                    6   5  4  3  2  1  0
@@ -832,22 +723,21 @@ hid_inst: entity work.hid
   system_joyswap      => system_joyswap,
   system_detach_reset => detach_reset,
 
-  -- port io (used to expose rs232)
-  port_status         => (others => '0'),
-  port_out_available  => (others => '0'),
-  port_out_strobe     => open,
-  port_out_data       => (others => '0'),
-  port_in_available   => (others => '0'),
-  port_in_strobe      => open,
-  port_in_data        => open,
+  port_status         => serial_status, -- in
+  port_out_available  => serial_tx_available, --in
+  port_out_strobe     => serial_tx_strobe, -- out
+  port_out_data       => serial_tx_data, --in
+  port_in_available   => serial_rx_available, -- in
+  port_in_strobe      => serial_rx_strobe, -- out
+  port_in_data        => serial_rx_data, -- out
 
   int_out_n           => int_out_n,
   int_in              => unsigned'(x"0" & sdc_int & '0' & hid_int & '0'),
   int_ack             => int_ack,
 
-  buttons             => unsigned'(not user & not reset), -- S0 and S1 buttons on Tang
+  buttons             => unsigned'(user & reset),
   leds                => open,
-  color               => open
+  color               => ws2812_color
 );
 
 -- c1541 ROM's SPI Flash
@@ -863,7 +753,7 @@ port map(
     resetn    => flash_lock,
     ready     => flash_ready,
     busy      => open,
-    address   => (X"7" & "000" & dos_sel & c1541rom_addr),
+    address   => (X"2" & "000" & dos_sel & c1541rom_addr),
     cs        => c1541rom_cs,
     dout      => c1541rom_data,
     mspi_cs   => mspi_cs,
@@ -886,10 +776,10 @@ begin
   end if;
 end process;
 
-main_ram_inst: entity work.Gowin_DPB_64kram
+main_ram_inst: entity work.Gowin_DPB_16kram
     port map (
         --douta => open,
-        ada => dl_addr,
+        ada => dl_addr(13 downto 0),
         dina => dl_data,
         clka => clk_sys,
         wrea => dl_wr,
@@ -901,19 +791,20 @@ main_ram_inst: entity work.Gowin_DPB_64kram
         ceb => '1',
         resetb => '0',
         wreb => ram_we,
-        adb => c16_addr,
+        adb => c16_addr(13 downto 0),
         doutb => ram_dout_i,
         dinb => c16_dout
     );
 
-kernal_inst: entity work.Gowin_SDPB_kernal_rom_16k_gw5a
+kernal_inst: entity work.Gowin_SDPB_kernal_rom_16k
     port map (
         dout => kernal0_dout_i,
         clka => clk_sys,
         cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_rom = '1' else '0',
         clkb => clk_sys,
         ceb => '1',
-        reset => '0',
+        reseta => '0',
+        resetb => '0',
         oce => '1',
         ada => ioctl_addr(13 downto 0),
         din => ioctl_dout,
@@ -930,53 +821,55 @@ basic_inst: entity work.Gowin_pROM_basic
         ad => c16_addr(13 downto 0)
     );
 
-funcl_inst: entity work.Gowin_pROM_funcl
-    port map (
-        dout => fl_dout_i,
-        clk => clk_sys,
-        oce => '1',
-        ce => '1',
-        reset => '0',
-        ad => c16_addr(13 downto 0)
-    );
+--funcl_inst: entity work.Gowin_pROM_funcl
+--    port map (
+--        dout => fl_dout_i,
+--        clk => clk_sys,
+--        oce => '1',
+--        ce => '1',
+--        reset => '0',
+--        ad => c16_addr(13 downto 0)
+--    );
 
-funch_inst: entity work.Gowin_pROM_funch
-    port map (
-        dout => fh_dout_i,
-        clk => clk_sys,
-        oce => '1',
-        ce => '1',
-        reset => '0',
-        ad => c16_addr(13 downto 0)
-    );
+--funch_inst: entity work.Gowin_pROM_funch
+--    port map (
+--        dout => fh_dout_i,
+--        clk => clk_sys,
+--        oce => '1',
+--        ce => '1',
+--        reset => '0',
+--        ad => c16_addr(13 downto 0)
+--    );
 
-Cart_low_loadable_rom_gw5a: entity work.Gowin_SDPB_rom_16k_gw5a
-    port map (
-        dout => cartl_dout_i,
-        clka => clk_sys,
-        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_crt = '1' else '0',
-        clkb => clk_sys,
-        ceb => '1',
-        reset => '0',
-        oce => '1',
-        ada => ioctl_addr(13 downto 0),
-        din => ioctl_dout,
-        adb => c16_addr(13 downto 0)
-		);
+--Cart_low_loadable_rom_gw5a: entity work.Gowin_SDPB_rom_16k
+--    port map (
+--        dout => cartl_dout_i,
+--        clka => clk_sys,
+--        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_crt = '1' else '0',
+--        clkb => clk_sys,
+--        ceb => '1',
+--        reseta => '0',
+--        resetb => '0',
+--        oce => '1',
+--        ada => ioctl_addr(13 downto 0),
+--        din => ioctl_dout,
+--        adb => c16_addr(13 downto 0)
+--		);
 
-Cart_high_loadable_rom_gw5a: entity work.Gowin_SDPB_rom_16k_gw5a
-    port map (
-        dout => carth_dout_i,
-        clka => clk_sys,
-        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 1 and load_crt = '1' else '0',
-        clkb => clk_sys,
-        ceb => '1',
-        reset => '0',
-        oce => '1',
-        ada => ioctl_addr(13 downto 0),
-        din => ioctl_dout,
-        adb => c16_addr(13 downto 0)
-		);
+--Cart_high_loadable_rom_gw5a: entity work.Gowin_SDPB_rom_16k
+--    port map (
+--        dout => carth_dout_i,
+--        clka => clk_sys,
+--        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 1 and load_crt = '1' else '0',
+--        clkb => clk_sys,
+--        ceb => '1',
+--        reseta => '0',
+--        resetb => '0',
+--        oce => '1',
+--        ada => ioctl_addr(13 downto 0),
+--        din => ioctl_dout,
+--        adb => c16_addr(13 downto 0)
+--		);
 
 process(clk_sys, xrst)
 begin
@@ -1008,19 +901,17 @@ end process;
 ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
 kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
 basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
-fl_dout <= fl_dout_i when cs0 = '0' and  roml = 2 else x"FF";
-fh_dout <= fh_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
-cartl_dout <= cartl_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
-carth_dout <= carth_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
 
-c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout and fl_dout and fh_dout and openbus_data;
+c16_din <= ram_dout and kernal0_dout and basic_dout and openbus_data;
 
---process(clk_sys)
-process(clk_sys, c16_din, c16_datalatch)
+process (clk_sys, pll_locked, c16_din)
 begin
-  --if rising_edge(clk_sys) then
-  if (clk_sys = '1') then
-    c16_datalatch <= c16_din;
+  if pll_locked = '0' then
+    c16_datalatch <= x"FF";
+  elsif rising_edge(clk_sys) then
+    if clk_sys = '1' then
+      c16_datalatch <= c16_din;
+    end if;
   end if;
 end process;
 
@@ -1078,6 +969,16 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	IEC_DATAOUT  => iec_data_o,
 	IEC_CLKOUT   => iec_clk_o,
 	IEC_RESET    => c16_iec_reset_o,
+
+  serial_status_out   => serial_status,
+  serial_data_out_available => serial_tx_available,
+  serial_strobe_out   => serial_tx_strobe,
+  serial_data_out     => serial_tx_data,
+
+  serial_data_in_free => serial_rx_available,
+  serial_strobe_in    => serial_rx_strobe,
+  serial_data_in      => serial_rx_data,
+
   RS232_RX     => uart_rx, -- future 
   RS232_TX     => open  -- future
   );
