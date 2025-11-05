@@ -521,8 +521,8 @@ generic map (
 
 audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
 
-audio_l <= audio_l;
-audio_r <= audio_l;
+audio_l <= audio_data_l & "00";
+audio_r <= audio_data_l & "00";
 
 video_inst: entity work.video
 generic map
