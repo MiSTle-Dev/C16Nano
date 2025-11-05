@@ -290,8 +290,6 @@ signal serial_rx_available : std_logic_vector(7 downto 0);
 signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
 
-constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
-
 component CLKDIV
     generic (
         DIV_MODE : STRING := "2";
@@ -784,11 +782,11 @@ main_ram_inst: entity work.Gowin_DPB_16kram
         wrea => dl_wr,
         ocea => '1',
         cea => '1',
-        reseta => resetc16,
+        reseta => '0',
         clkb => clk_sys,
         oceb => '1',
         ceb => '1',
-        resetb => resetc16,
+        resetb => '0',
         wreb => ram_we,
         adb => c16_addr(13 downto 0),
         doutb => ram_dout_i,
@@ -802,8 +800,8 @@ kernal_inst: entity work.Gowin_SDPB_kernal_rom_16k
         cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_rom = '1' else '0',
         clkb => clk_sys,
         ceb => '1',
-        reseta => resetc16,
-        resetb => resetc16,
+        reseta => '0',
+        resetb => '0',
         oce => '1',
         ada => ioctl_addr(13 downto 0),
         din => ioctl_dout,
@@ -816,7 +814,7 @@ basic_inst: entity work.Gowin_pROM_basic
         clk => clk_sys,
         oce => '1',
         ce => '1',
-        reset => resetc16,
+        reset => '0',
         ad => c16_addr(13 downto 0)
     );
 
