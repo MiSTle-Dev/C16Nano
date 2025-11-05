@@ -1,12 +1,3 @@
---Copyright (C)2014-2025 Gowin Semiconductor Corporation.
---All rights reserved.
---File Title: IP file
---Tool Version: V1.9.12 (64-bit)
---Part Number: GW2AR-LV18QN88C8/I7
---Device: GW2AR-18
---Device Version: C
---Created Time: Mon Nov  3 13:01:30 2025
-
 library IEEE;
 use IEEE.std_logic_1164.all;
 
@@ -98,7 +89,7 @@ begin
             FBDIV_SEL => 18,
             DYN_ODIV_SEL => "false",
             ODIV_SEL => 8,
-            PSDA_SEL => "1111",
+            PSDA_SEL => "1000",
             DYN_DA_EN => "false",
             DUTYDA_SEL => "1000",
             CLKOUT_FT_DIR => '1',

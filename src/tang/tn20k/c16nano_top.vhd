@@ -20,6 +20,7 @@ entity c16nano_top is
     reset       : in std_logic; -- S2 button
     user        : in std_logic; -- S1 button
     leds_n      : out std_logic_vector(5 downto 0);
+    io          : in std_logic_vector(4 downto 0);
     -- USB-C BL616 UART
     uart_rx     : in std_logic;
     uart_tx     : out std_logic;
@@ -237,7 +238,6 @@ signal detach_reset    : std_logic;
 signal detach          : std_logic;
 signal disk_pause      : std_logic;
 signal flash_ready      : std_logic;
-
 signal usb_key          : std_logic_vector(7 downto 0);
 signal c16_rnw          : std_logic;
 signal c16_addr         : std_logic_vector(15 downto 0);
@@ -290,6 +290,51 @@ signal serial_rx_available : std_logic_vector(7 downto 0);
 signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
 
+signal tap_play_addr   : std_logic_vector(22 downto 0);
+signal tap_last_addr   : std_logic_vector(22 downto 0);
+signal tap_version     : std_logic_vector(1 downto 0);
+signal tap_data        : std_logic_vector(7 downto 0);
+signal tap_data_in     : std_logic_vector(7 downto 0);
+signal cass_write      : std_logic;
+signal cass_motor      : std_logic;
+signal cass_sense      : std_logic;
+signal cass_read       : std_logic;
+signal cass_run        : std_logic;
+signal cass_finish     : std_logic;
+signal cass_snd        : std_logic;
+signal tap_download    : std_logic;
+signal tap_reset       : std_logic;
+signal tap_loaded      : std_logic;
+signal tap_play_btn    : std_logic;
+signal tap_wrreq       : std_logic;
+signal tap_wrfull      : std_logic;
+signal tap_autoplay    : std_logic;
+signal tap_sdram_oe    : std_logic := '0';
+signal tap_wr          : std_logic := '0';
+signal cass_aud        : std_logic;
+signal clkref          : std_logic;
+signal oe,we              : std_logic;
+signal p2_hD, p2_h  : std_logic;
+signal last_ras : std_logic;
+signal xclkdiv   : std_logic_vector(3 downto 0);
+signal c16_ras  : std_logic;
+signal c16_cas  : std_logic;
+signal c16_a_low : std_logic_vector(7 downto 0) ;
+signal c16_a_hi  : std_logic_vector(7 downto 0);
+signal c16_rasD  : std_logic;
+signal c16_casD  : std_logic;
+signal c16_a     : std_logic_vector(7 downto 0);
+signal ioctl_wr_d     : std_logic;
+signal resetc16_d     : std_logic;
+signal ioctl_wait    : std_logic;
+signal tap_rd   : std_logic; 
+signal tap_data_ready : std_logic := '1';
+signal tap_cycle       : std_logic;
+signal tape_adc_act   : std_logic;
+signal casmatch : std_logic;
+
+constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
+
 component CLKDIV
     generic (
         DIV_MODE : STRING := "2";
@@ -313,11 +358,10 @@ begin
   uart_tx <= bl616_mon_rx;
   bl616_mon_tx <= uart_rx;
 -- ----------------- SPI input parser ----------------------
-process (clk_sys, pll_locked)
+process (all)
 begin
   if pll_locked = '0' then
     spi_ext <= '0';
-    m0s(3 downto 1) <= "ZZZ";
   elsif rising_edge(clk_sys) then
     if m0s(2) = '0' then
         spi_ext <= '1';
@@ -520,8 +564,9 @@ generic map (
 
 audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
 
-audio_l <= audio_data_l & "00";
-audio_r <= audio_data_l & "00";
+cass_aud <= cass_read and not cass_sense and not cass_motor;
+audio_l <= (audio_data_l & "00") or (4x"00" & cass_aud & 13x"00000");
+audio_r <= audio_l;
 
 video_inst: entity work.video
 generic map
@@ -601,17 +646,15 @@ leds_n(5 downto 0) <= not leds(5 downto 0);
 leds(5 downto 1) <= (others => '0');
 leds(0) <= led1541; -- green
 
---                    6   5  4  3  2  1  0
---                  TR3 TR2 TR RI LE DN UP digital c64 
 joyDS2_p1  <= key_square  & key_right  & key_left  & key_down  & key_up;
 joyDS2_p2  <= key_square2 & key_right2 & key_left2 & key_down2 & key_up2;
-joyDigital <= 5x"00";
+joyDigital <= not(io(0) & io(2) & io(1) & io(4) & io(3));
 joyUsb1    <= joystick1(4) & joystick1(3) & joystick1(2) & joystick1(1) & joystick1(0);
 joyUsb2    <= joystick2(4) & joystick2(3) & joystick2(2) & joystick2(1) & joystick2(0);
 joyNumpad  <= numpad(4) & numpad(0) & numpad(1) & numpad(2) & numpad(3);
 
 -- send external DB9 joystick port to µC
-db9_joy <= 6x"00";
+db9_joy <= not('1' & io(0) & io(2) & io(1) & io(4) & io(3));
 
 process(clk_sys)
 begin
@@ -785,11 +828,11 @@ main_ram_inst: entity work.Gowin_DPB_16kram
         wrea => dl_wr,
         ocea => '1',
         cea => '1',
-        reseta => '0',
+        reseta => resetc16,
         clkb => clk_sys,
         oceb => '1',
         ceb => '1',
-        resetb => '0',
+        resetb => resetc16,
         wreb => ram_we,
         adb => c16_addr(13 downto 0),
         doutb => ram_dout_i,
@@ -803,8 +846,8 @@ kernal_inst: entity work.Gowin_SDPB_kernal_rom_16k
         cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_rom = '1' else '0',
         clkb => clk_sys,
         ceb => '1',
-        reseta => '0',
-        resetb => '0',
+        reseta => resetc16,
+        resetb => resetc16,
         oce => '1',
         ada => ioctl_addr(13 downto 0),
         din => ioctl_dout,
@@ -817,7 +860,7 @@ basic_inst: entity work.Gowin_pROM_basic
         clk => clk_sys,
         oce => '1',
         ce => '1',
-        reset => '0',
+        reset => resetc16,
         ad => c16_addr(13 downto 0)
     );
 
@@ -904,21 +947,17 @@ basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and openbus_data;
 
-process (clk_sys, pll_locked, c16_din)
+process(all)
 begin
-  if pll_locked = '0' then
-    c16_datalatch <= x"FF";
-  elsif rising_edge(clk_sys) then
-    if clk_sys = '1' then
-      c16_datalatch <= c16_din;
-    end if;
+  if rising_edge(clk_sys) then
+    c16_datalatch <= c16_din;
   end if;
 end process;
 
 openbus_sel <= '1' when c16_addr(15 downto 5) = x"FD" & "111" else '0';
 openbus_data <= c16_datalatch when openbus_sel = '1' else x"ff";
 
-resetc16 <= system_reset(0) or not pll_locked;
+resetc16 <= system_reset(0) or not pll_locked or not flash_lock;
 xrst <= resetc16 or detach_reset;
 xreset <= resetc16 or cart_reset or detach_reset;
 
@@ -949,10 +988,10 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	CS1      => cs1,
 	CS_IO    => cs_io,
 
-	cass_mtr => open,
-	cass_in  => '1',
-	cass_aud => '1',
-	cass_out => open,
+	cass_mtr => cass_motor,
+	cass_in  => cass_read,
+	cass_aud => cass_read and  not cass_sense and not cass_motor,
+	cass_out => cass_write,
 
 	JOY0     => joyB when system_joyswap = '1' else joyA,
 	JOY1     => joyA when system_joyswap = '1' else joyB,
@@ -1064,7 +1103,139 @@ crt_inst : entity work.loader_sd_card
     ioctl_addr        => ioctl_addr,
     ioctl_data        => ioctl_dout,
     ioctl_wr          => ioctl_wr,
-    ioctl_wait        => '0'
+    ioctl_wait        => ioctl_wait
   );
+
+-- synchronize sdram state machine with the ras/cas phases of the c16
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    if c16_ras ='0' and last_ras = '1' then
+      xclkdiv <= (others => '0');
+      last_ras <= c16_ras;
+    else
+      xclkdiv <= xclkdiv + 1;
+    end if;
+  end if;
+end process;
+
+clkref   <= '1' when xclkdiv(3) = '1' else '0';
+
+-- latch/demultiplex dram address
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    c16_rasD <= c16_ras;
+    c16_casD <= c16_cas;
+    if c16_rasD ='1' and c16_ras ='0' then 
+      c16_a_low <= c16_a; 
+    elsif c16_casD ='1' and c16_cas ='0' then
+      c16_a_hi  <= c16_a;
+    end if;
+  end if;
+end process;
+
+dram_inst: entity work.sdram
+   port map(
+    -- SDRAM side interface
+    SDRAM_CLK  => O_sdram_clk,
+    SDRAM_CKE  => O_sdram_cke,
+    SDRAM_DQ   => IO_sdram_dq,   -- 32 bit bidirectional data bus
+    SDRAM_A    => O_sdram_addr,  -- 11 bit multiplexed address bus
+    SD_DQM     => O_sdram_dqm,   -- two byte masks
+    SDRAM_BA   => O_sdram_ba,    -- two banks
+    SDRAM_nCS  => O_sdram_cs_n,  -- a single chip select
+    SDRAM_nWE  => O_sdram_wen_n, -- write enable
+    SDRAM_nRAS => O_sdram_ras_n, -- row address select
+    SDRAM_nCAS => O_sdram_cas_n, -- columns address select
+    -- cpu/chipset interface
+    init       => not pll_locked,-- init signal after FPGA config to initialize RAM
+    clk        => clk_sys,       -- sdram is accessed at 28MHz
+    clkref     => clkref,        -- reference clock to sync to
+    din        => ioctl_dout when (ioctl_download and load_tap) else c16_dout, -- data input from chipset/cpu
+    dout       => tap_data,     -- data output to chipset/cpu
+    addr       => ioctl_addr when (ioctl_download and load_tap) else tap_play_addr,
+    oe         => oe,            -- cpu/chipset requests read/wrie
+    we         => we             -- cpu/chipset requests write
+  );
+
+-------------- TAP -------------------
+we <= ioctl_wr_d when (ioctl_download and load_tap) else '0';
+oe <= '1' when tap_sdram_oe else '0';
+
+tap_reset <= '1' when resetc16 = '1' or tap_download = '1' or tap_last_addr = TAP_ADDR or cass_finish = '1' or (cass_run = '1'and ((unsigned(tap_last_addr) - unsigned(tap_play_addr)) < 80)) else '0';
+tap_loaded <= '1' when tap_play_addr < tap_last_addr else '0';
+
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    resetc16_d <= resetc16;
+    ioctl_wr_d <= ioctl_wr;
+
+    if resetc16_d ='0' and resetc16 = '1' then
+      ioctl_wait <= '0';
+    end if;
+
+    tap_wr <= '0';
+    if (ioctl_wr and ioctl_download and load_tap) = '1' then
+        ioctl_wait <= '1';
+        tap_wr <= '1';
+        if ioctl_addr = 12 then
+          tap_version <= ioctl_dout(1 downto 0);
+        end if;
+    elsif tap_wr = '0' and (ioctl_wait and tap_data_ready) = '1' then
+        ioctl_wait <= '0';
+    end if;
+  end if;
+end process;
+
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    tap_cycle <= '0';
+
+    if tap_reset = '1' then
+        tap_last_addr <= ioctl_addr + 2 + TAP_ADDR when tap_download = '1' else TAP_ADDR;
+        tap_play_addr <= TAP_ADDR;
+        tap_rd <= '0';
+        tap_cycle <= '0';
+        tap_autoplay <= ioctl_download and load_tap;
+    else
+        tap_rd <= '0';
+        tap_wrreq <= '0';
+        tap_autoplay <= '0';
+
+        if tap_rd = '0' and tap_wrreq = '1' then
+          if tap_cycle = '1' then
+            tap_play_addr <= tap_play_addr + 1;
+            tap_cycle <= '0';
+            tap_wrreq <= '1';
+          elsif tap_wrfull ='0' and tap_loaded ='1' then
+            tap_rd <= '1';
+            tap_cycle <= '1';
+          end if;
+        end if;
+    end if;
+  end if;
+end process;
+
+c1530_inst: entity work.c1530
+port map (
+  clk32           => clk_sys,
+  restart_tape    => tap_reset,
+  wav_mode        => '0',
+  tap_version     => tap_version,
+  host_tap_in     => tap_data,
+  host_tap_wrreq  => tap_wrreq,
+  tap_fifo_wrfull => tap_wrfull,
+  tap_fifo_error  => cass_finish,
+  cass_read       => cass_read,
+  cass_write      => cass_write,
+  cass_motor      => cass_motor,
+  cass_sense      => cass_sense,
+  cass_run        => cass_run,
+  osd_play_stop_toggle => tap_autoplay,
+  ear_input       => '0'
+);
 
 end Behavioral_top;
