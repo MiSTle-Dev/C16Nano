@@ -79,9 +79,24 @@ module C16
 	input   [1:0] sid_type,
 
 	output        PAL,
+
+	output [31:0] serial_status_out,
+	output [7:0]  serial_data_out_available,
+	input         serial_strobe_out,
+	output [7:0]  serial_data_out,
+
+	output [7:0]  serial_data_in_free,
+	input         serial_strobe_in,
+	input [7:0]   serial_data_in,
+
 	input         RS232_RX,
 	output        RS232_TX
 );
+
+assign serial_status_out = 0;
+assign serial_data_out_available = 0;
+assign serial_data_out = 0;
+assign serial_data_in_free = 0;
 
 wire [15:0] c16_addr;
 wire [15:0] ted_addr;
@@ -106,7 +121,7 @@ assign kbus[5:4] = kbus_kbd[5:4]; // no joystick line connected here
 assign kbus[6] = kbus_kbd[6] & joy0_sel[4];
 assign kbus[7] = kbus_kbd[7] & joy1_sel[4];
 
-wire irq_n, acia_irq_n;
+wire irq_n, acia_irq_n, acia_irq;
 
 // 8501 CPU
 mos8501 cpu
@@ -114,7 +129,7 @@ mos8501 cpu
 	.clk(CLK28), 
 	.reset(sreset), 
 	.enable(cpuenable && !INWAIT),  
-	.irq_n(irq_n & acia_irq_n),
+	.irq_n(irq_n & acia_irq_n), //  & ~acia_irq),
 	.data_in(c16_data), 
 	.data_out(cpu_data), 
 	.address(cpu_addr),
@@ -241,6 +256,39 @@ gen_uart_mos_6551 uart
 	.dtr_n(),
 	.rts_n()
 );
+
+wire dtr, rts_cts;
+
+//glb6551 uart(
+//  .RESET_N(~sreset),
+//  .CLK(CLK28),
+//  .RX_CLK(),
+//  .RX_CLK_IN(clk_18432en),
+//  .XTAL_CLK_IN(clk_18432en),
+//  .PH_2(1'b1),
+//  .DI(c16_data),
+//  .DO(uart_data),
+//  .IRQ(acia_irq),
+//  .CS({1'b0,uartio}),
+//  .RW_N(RnW),
+//  .RS(c16_addr[1:0]),
+//  .TXDATA_OUT(RS232_TX),
+//  .RXDATA_IN(RS232_RX),
+//  .RTS(rts_cts),
+//  .CTS(rts_cts),
+//  .DCD(dtr),
+//  .DTR(dtr),
+//  .DSR(dtr),
+
+//  .serial_status_out(serial_status_out),
+//  .serial_data_out_available(serial_data_out_available),
+//  .serial_strobe_out(serial_strobe_out),
+//  .serial_data_out(serial_data_out),
+
+//  .serial_data_in_free(serial_data_in_free),
+//  .serial_strobe_in(serial_strobe_in),
+//  .serial_data_in(serial_data_in)
+//);
 
 // C16 additional motherboard functions
 always @(posedge CLK28)	begin	// reset tries to emulate the length of a real reset

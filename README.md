@@ -6,6 +6,7 @@ The C16Nano is a port of the [MiSTer](https://github.com/MiSTer-devel/C16_MiSTer
 | Board      | FPGA       | support |Note|
 | ---        |        -   | -     |-|
 | [Tang Console 60K NEO](https://wiki.sipeed.com/hardware/en/tang/tang-console/mega-console.html)|[GW5AT-60](https://www.gowinsemi.com/en/product/detail/60/) | HDMI / LCD |twin Dualshock, no Retro D9 Joystick|
+| [Tang Nano 20k](https://wiki.sipeed.com/nano20k)     | [GW2AR](https://www.gowinsemi.com/en/product/detail/38/)  | HDMI |limited to 16k RAM for the moment|
 
 This project relies on a MPU being connected to the FPGA (onboard BL616 or external one). --> [MiSTle-Dev wiki](https://github.com/MiSTle-Dev/.github/wiki) <--  
 

@@ -5,7 +5,7 @@ use IEEE.numeric_std.all;
 --
 -- Model 1541B
 --
--- 2023 Stefan Voss Dolphindos 2 and external ROM added
+-- 2023 & 2025 Stefan Voss Dolphindos 2 and external ROM added
 
 entity c1541_logic is
   generic
@@ -58,7 +58,6 @@ architecture SYN of c1541_logic is
   -- clocks, reset
   signal p2_h_r         : std_logic;
   signal p2_h_f         : std_logic;
-  signal clk_1M_pulse   : std_logic;
     
   -- cpu signals  
   signal cpu_a          : std_logic_vector(23 downto 0);
@@ -145,7 +144,6 @@ architecture SYN of c1541_logic is
     if rising_edge(clk_32M) then
         if pause = '0' then count := std_logic_vector(unsigned(count) + 1); end if;
     end if;
-    if count = "10000" then clk_1M_pulse <= '1'; else clk_1M_pulse <='0' ; end if;
     if count = "00000" then p2_h_r <= '1'; else p2_h_r <='0' ; end if;
     if count = "10000" then p2_h_f <= '1'; else p2_h_f <='0' ; end if;
   end process;
@@ -191,17 +189,17 @@ architecture SYN of c1541_logic is
   rom_do <= c1541rom_data;
   
 -- 8k extra sram extension for dolphin dos
-ram_8kinst :  entity work.Gowin_SP_8k
-port map (
-    dout => extram_do,
-    clk => clk_32M,
-    oce => '1',
-    ce => ext_en,
-    reset => reset,
-    wre => extram_wr,
-    ad => cpu_a(12 downto 0),
-    din => cpu_do
-);
+--ram_8kinst :  entity work.Gowin_SP_8k
+--port map (
+--    dout => extram_do,
+--    clk => clk_32M,
+--    oce => '1',
+--    ce => ext_en,
+--    reset => reset,
+--    wre => extram_wr,
+--    ad => cpu_a(12 downto 0),
+--    din => cpu_do
+--);
 
   sb_data_oe <= not (uc1_pb_o(1) or uc1_pb_oe_n(1)) and not atn;
   sb_clk_oe <= not(uc1_pb_o(3) or not uc1_pb_oe(3));
