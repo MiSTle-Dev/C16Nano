@@ -93,7 +93,7 @@ end;
 
 architecture Behavioral_top of c16nano_top is
 
-signal clk_sys          : std_logic;
+signal clk_sys        : std_logic;
 signal pll_locked     : std_logic;
 signal clk_pixel_x5   : std_logic;
 signal mspi_clk_x5    : std_logic;
@@ -104,7 +104,7 @@ signal clk_ntsc : std_logic;
 signal pll_locked_pal : std_logic;
 signal clk_pixel_x5_pal   : std_logic;
 attribute syn_keep : integer;
-attribute syn_keep of clk_sys             : signal is 1;
+attribute syn_keep of clk_sys           : signal is 1;
 attribute syn_keep of clk_pixel_x5      : signal is 1;
 attribute syn_keep of clk_pixel_x5_pal  : signal is 1;
 attribute syn_keep of mspi_clk_x5       : signal is 1;
@@ -237,6 +237,7 @@ signal key_left2       : std_logic;
 signal key_right2      : std_logic;
 signal audio_div       : unsigned(8 downto 0);
 signal flash_clk       : std_logic;
+attribute syn_keep of flash_clk : signal is 1;
 signal flash_lock      : std_logic;
 signal dcsclksel       : std_logic_vector(3 downto 0);
 signal ioctl_download  : std_logic := '0';
@@ -261,7 +262,6 @@ signal detach_reset    : std_logic;
 signal detach          : std_logic;
 signal disk_pause      : std_logic;
 signal flash_ready      : std_logic;
-
 signal usb_key          : std_logic_vector(7 downto 0);
 signal c16_rnw          : std_logic;
 signal c16_addr         : std_logic_vector(15 downto 0);
@@ -313,6 +313,7 @@ signal state            : std_logic_vector(3 downto 0) := "0000";
 signal xreset, xrst     : std_logic;
 signal palmode          : std_logic;
 signal clk32            : std_logic;
+attribute syn_keep of clk32 : signal is 1;
 signal serial_status    : std_logic_vector(31 downto 0);
 signal serial_tx_available : std_logic_vector(7 downto 0);
 signal serial_tx_strobe : std_logic;
@@ -320,6 +321,45 @@ signal serial_tx_data   : std_logic_vector(7 downto 0);
 signal serial_rx_available : std_logic_vector(7 downto 0);
 signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
+
+signal tap_play_addr   : std_logic_vector(22 downto 0);
+signal tap_last_addr   : std_logic_vector(22 downto 0);
+signal tap_version     : std_logic_vector(1 downto 0);
+signal tap_data        : std_logic_vector(7 downto 0);
+signal tap_data_in     : std_logic_vector(7 downto 0);
+signal cass_write      : std_logic;
+signal cass_motor      : std_logic;
+signal cass_sense      : std_logic;
+signal cass_read       : std_logic;
+signal cass_run        : std_logic;
+signal cass_finish     : std_logic;
+signal cass_snd        : std_logic;
+signal tap_download    : std_logic;
+signal tap_reset       : std_logic;
+signal tap_loaded      : std_logic;
+signal tap_play_btn    : std_logic;
+signal tap_wrreq       : std_logic;
+signal tap_wrfull      : std_logic;
+signal tap_autoplay    : std_logic;
+signal tap_sdram_oe    : std_logic := '0';
+signal tap_wr          : std_logic := '0';
+signal cass_aud        : std_logic;
+signal clkref          : std_logic;
+signal sdram_oe        : std_logic;
+signal sdram_wr        : std_logic;
+signal last_ras        : std_logic;
+signal xclkdiv         : std_logic_vector(3 downto 0);
+signal c16_ras         : std_logic;
+signal c16_cas         : std_logic;
+signal ioctl_wr_d      : std_logic;
+signal resetc16_d      : std_logic;
+signal ioctl_wait      : std_logic := '0';
+signal tap_rd          : std_logic; 
+signal tap_data_ready  : std_logic := '1';
+signal tap_cycle       : std_logic;
+signal tape_adc_act    : std_logic;
+signal casmatch        : std_logic;
+constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
 
 component CLKDIV
     generic (
@@ -357,11 +397,10 @@ begin
   uart_tx <= bl616_mon_rx;
   bl616_mon_tx <= uart_rx;
 -- ----------------- SPI input parser ----------------------
-process (clk_sys, pll_locked)
+process (all)
 begin
   if pll_locked = '0' then
     spi_ext <= '0';
-    m0s(3 downto 1) <= "ZZZ";
   elsif rising_edge(clk_sys) then
     if m0s(2) = '0' then
         spi_ext <= '1';
@@ -467,7 +506,7 @@ variable reset_cnt : integer range 0 to 2147483647;
   end if;
 end process;
 
-disk_reset <= '1' when not flash_ready or c16_iec_reset_o or c1541_osd_reset else '0';
+disk_reset <= '1' when not flash_ready or resetc16 or c16_iec_reset_o or c1541_osd_reset else '0';
 
 -- rising edge sd_change triggers detection of new disk
 process(clk_sys, pll_locked)
@@ -591,8 +630,9 @@ generic map (
 
 audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
 
-audio_l <= audio_data_l & "00";
-audio_r <= audio_data_l & "00";
+cass_aud <= cass_read and not cass_sense and not cass_motor;
+audio_l <= (audio_data_l & "00") or (4x"00" & cass_aud & 13x"00000");
+audio_r <= audio_l;
 
 video_inst: entity work.video
 generic map
@@ -1015,6 +1055,9 @@ end process;
 ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
 kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
 basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
+casmatch <= '1' when c16_addr(8 downto 4) /= x"11" else '0';
+cass_dout <= "11111" & (cs_io or casmatch or (not tape_adc_act and cass_sense)) & "11";
+
 fl_dout <= fl_dout_i when cs0 = '0' and  roml = 2 else x"FF";
 fh_dout <= fh_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
 cartl_dout <= cartl_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
@@ -1022,11 +1065,9 @@ carth_dout <= carth_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern 
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout and fl_dout and fh_dout and openbus_data;
 
---process(clk_sys)
-process(clk_sys, c16_din, c16_datalatch)
+process(all)
 begin
-  --if rising_edge(clk_sys) then
-  if (clk_sys = '1') then
+  if rising_edge(clk_sys) then
     c16_datalatch <= c16_din;
   end if;
 end process;
@@ -1034,7 +1075,7 @@ end process;
 openbus_sel <= '1' when c16_addr(15 downto 5) = x"FD" & "111" else '0';
 openbus_data <= c16_datalatch when openbus_sel = '1' else x"ff";
 
-resetc16 <= system_reset(0) or not pll_locked;
+resetc16 <= system_reset(0) or not pll_locked or not flash_lock;
 xrst <= resetc16 or detach_reset;
 xreset <= resetc16 or cart_reset or detach_reset;
 
@@ -1056,6 +1097,8 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	tvmode   => tvmode,
 	wide     => '0',
 
+	RAS      => c16_ras,
+	CAS      => c16_cas,
 	RnW      => c16_rnw,
 	ADDR     => c16_addr,
 	DOUT     => c16_dout,
@@ -1065,10 +1108,10 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	CS1      => cs1,
 	CS_IO    => cs_io,
 
-	cass_mtr => open,
-	cass_in  => '1',
-	cass_aud => '1',
-	cass_out => open,
+	cass_mtr => cass_motor,
+	cass_in  => cass_read,
+	cass_aud => cass_read and  not cass_sense and not cass_motor,
+	cass_out => cass_write,
 
 	JOY0     => joyB when system_joyswap = '1' else joyA,
 	JOY1     => joyA when system_joyswap = '1' else joyB,
@@ -1180,7 +1223,7 @@ crt_inst : entity work.loader_sd_card
     ioctl_addr        => ioctl_addr,
     ioctl_data        => ioctl_dout,
     ioctl_wr          => ioctl_wr,
-    ioctl_wait        => '0'
+    ioctl_wait        => ioctl_wait
   );
 
 end Behavioral_top;
