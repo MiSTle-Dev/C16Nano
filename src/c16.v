@@ -48,6 +48,8 @@ module C16
 	input   [1:0] tvmode,
 	input         wide,
 
+	output        RAS,
+	output        CAS,
 	output        RnW,
 	output [15:0] ADDR,
 	input   [7:0] DIN,
@@ -104,7 +106,7 @@ wire [15:0] cpu_addr;
 wire [7:0] c16_data,ted_data,ram_data,cpu_data,port_in,port_out,keyport_data,uart_data;
 wire [7:0] keyboard_row,kbus,kbus_kbd;
 wire [6:0] c16_color;
-wire cpuenable;
+wire mux,cpuenable;
 wire aec,rdy;
 wire keyboardio;
 wire uartio;
@@ -170,6 +172,9 @@ ted mos8360
 	.ce_pix(CE_PIX),
 	.irq(irq_n),
 	.ba(rdy),
+	.mux(mux),
+	.ras(RAS),
+	.cas(CAS),
 	.cs_ram(CS_RAM),
 	.cs0(CS0),
 	.cs1(CS1),
@@ -304,9 +309,8 @@ always @(posedge CLK28)	begin	// reset tries to emulate the length of a real res
 	end
 end
 
-// assign VSYNC=1'b1; // set scart mode to RGB for TV
-assign c16_addr=cpu_addr&ted_addr;									 // C16 address bus
-assign c16_data=cpu_data&ted_data&DIN&keyport_data&uart_data;// &sid_data; // C16 data bus
+assign c16_addr=cpu_addr & ted_addr; // C16 address bus
+assign c16_data=cpu_data & ted_data & DIN & keyport_data & uart_data; // C16 data bus
 
 assign ADDR=c16_addr;
 assign DOUT=cpu_data;
