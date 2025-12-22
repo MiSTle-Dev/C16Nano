@@ -49,16 +49,16 @@ entity c16nano_top is
     sd_dat      : inout std_logic_vector(3 downto 0);
     ws2812      : out std_logic;
     -- "Magic" port names that the gowin compiler connects to the on-chip SDRAM
-    --O_sdram_clk  : out std_logic;
-    --O_sdram_cke  : out std_logic;
-    --O_sdram_cs_n : out std_logic;            -- chip select
-    --O_sdram_cas_n : out std_logic;           -- columns address select
-    --O_sdram_ras_n : out std_logic;           -- row address select
-    --O_sdram_wen_n : out std_logic;           -- write enable
-    --IO_sdram_dq  : inout std_logic_vector(31 downto 0); -- 32 bit bidirectional data bus
-    --O_sdram_addr : out std_logic_vector(10 downto 0);  -- 11 bit multiplexed address bus
-    --O_sdram_ba   : out std_logic_vector(1 downto 0);     -- two banks
-    --O_sdram_dqm  : out std_logic_vector(3 downto 0);     -- 32/4
+    O_sdram_clk  : out std_logic;
+    O_sdram_cke  : out std_logic;
+    O_sdram_cs_n : out std_logic; -- chip select
+    O_sdram_cas_n: out std_logic; -- columns address select
+    O_sdram_ras_n: out std_logic; -- row address select
+    O_sdram_wen_n: out std_logic; -- write enable
+    IO_sdram_dq  : inout std_logic_vector(31 downto 0); -- 32 bit bidirectional data bus
+    O_sdram_addr : out std_logic_vector(10 downto 0); -- 11 bit multiplexed address bus
+    O_sdram_ba   : out std_logic_vector(1 downto 0); -- two banks
+    O_sdram_dqm  : out std_logic_vector(3 downto 0); -- 32/4
     -- Gamepad DualShock P1
     ds2_clk       : out std_logic;
     ds2_mosi      : out std_logic;
@@ -255,7 +255,15 @@ signal kernal0_dout     : std_logic_vector(7 downto 0);
 signal kernal0_dout_i   : std_logic_vector(7 downto 0);
 signal basic_dout       : std_logic_vector(7 downto 0);
 signal basic_dout_i     : std_logic_vector(7 downto 0);
-signal cass_dout        : std_logic_vector(7 downto 0) :=x"FF";
+signal fh_dout          : std_logic_vector(7 downto 0);
+signal fh_dout_i        : std_logic_vector(7 downto 0);
+signal fl_dout          : std_logic_vector(7 downto 0);
+signal fl_dout_i        : std_logic_vector(7 downto 0);
+signal cartl_dout       : std_logic_vector(7 downto 0);
+signal cartl_dout_i     : std_logic_vector(7 downto 0);
+signal carth_dout       : std_logic_vector(7 downto 0);
+signal carth_dout_i     : std_logic_vector(7 downto 0);
+signal cass_dout        : std_logic_vector(7 downto 0);
 signal openbus_data     : std_logic_vector(7 downto 0);
 signal c16_datalatch    : std_logic_vector(7 downto 0);
 signal openbus_sel      : std_logic;
@@ -290,6 +298,51 @@ signal serial_rx_available : std_logic_vector(7 downto 0);
 signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
 
+signal tap_play_addr   : std_logic_vector(22 downto 0);
+signal tap_last_addr   : std_logic_vector(22 downto 0);
+signal tap_version     : std_logic_vector(1 downto 0);
+signal tap_data        : std_logic_vector(7 downto 0);
+signal tap_data_in     : std_logic_vector(7 downto 0);
+signal cass_write      : std_logic;
+signal cass_motor      : std_logic;
+signal cass_sense      : std_logic;
+signal cass_read       : std_logic;
+signal cass_run        : std_logic;
+signal cass_finish     : std_logic;
+signal cass_snd        : std_logic;
+signal tap_download    : std_logic;
+signal tap_reset       : std_logic;
+signal tap_loaded      : std_logic;
+signal tap_play_btn    : std_logic;
+signal tap_wrreq       : std_logic;
+signal tap_wrfull      : std_logic;
+signal tap_autoplay    : std_logic;
+signal tap_sdram_oe    : std_logic := '0';
+signal tap_wr          : std_logic := '0';
+signal cass_aud        : std_logic;
+signal clkref          : std_logic;
+signal sdram_oe        : std_logic;
+signal sdram_wr        : std_logic;
+signal last_ras        : std_logic;
+signal xclkdiv         : std_logic_vector(3 downto 0);
+signal c16_ras         : std_logic;
+signal c16_cas         : std_logic;
+signal ioctl_wr_d      : std_logic;
+signal resetc16_d      : std_logic;
+signal ioctl_wait      : std_logic := '0';
+signal tap_rd          : std_logic; 
+signal tap_data_ready  : std_logic := '1';
+signal tap_cycle       : std_logic;
+signal tape_adc_act    : std_logic;
+signal casmatch        : std_logic;
+signal c16_sdram_wr    : std_logic;
+signal c16_sdram_oe    : std_logic;
+signal sdram_addr      : std_logic_vector(22 downto 0);
+signal sdram_din       : std_logic_vector(7 downto 0);
+signal last_clkref     : std_logic;
+
+constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
+
 component CLKDIV
     generic (
         DIV_MODE : STRING := "2";
@@ -303,6 +356,16 @@ component CLKDIV
     );
 end component;
 
+component DL
+  generic ( 
+    INIT : bit := '0' 
+  );	
+  port (
+	 Q : OUT std_logic;	
+	 D : IN std_logic;	
+	 G : IN std_logic
+    );
+end component;
 
 begin
 
@@ -391,6 +454,21 @@ variable reset_cnt : integer range 0 to 2147483647;
       reset_cnt := reset_cnt - 1;
     elsif reset_cnt = 0 then
       disk_chg_trg <= '1';
+    end if;
+  end if;
+end process;
+
+process(clk_sys, resetc16)
+  variable pause_cnt : integer range 0 to 2147483647;
+  begin
+  if resetc16 = '1' then
+    disk_pause <= '1';
+    pause_cnt := 34000000;
+  elsif rising_edge(clk_sys) then
+    if pause_cnt /= 0 then
+      pause_cnt := pause_cnt - 1;
+    elsif pause_cnt = 0 then 
+      disk_pause <= '0';
     end if;
   end if;
 end process;
@@ -519,8 +597,9 @@ generic map (
 
 audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
 
-audio_l <= audio_data_l & "00";
-audio_r <= audio_data_l & "00";
+cass_aud <= cass_read and not cass_sense and not cass_motor;
+audio_l <= (audio_data_l & "00") or (4x"00" & cass_aud & 13x"00000");
+audio_r <= audio_l;
 
 video_inst: entity work.video
 generic map
@@ -773,26 +852,6 @@ begin
   end if;
 end process;
 
-main_ram_inst: entity work.Gowin_DPB_16kram
-    port map (
-        --douta => open,
-        ada => dl_addr(13 downto 0),
-        dina => dl_data,
-        clka => clk_sys,
-        wrea => dl_wr,
-        ocea => '1',
-        cea => '1',
-        reseta => '0',
-        clkb => clk_sys,
-        oceb => '1',
-        ceb => '1',
-        resetb => '0',
-        wreb => ram_we,
-        adb => c16_addr(13 downto 0),
-        doutb => ram_dout_i,
-        dinb => c16_dout
-    );
-
 kernal_inst: entity work.Gowin_SDPB_kernal_rom_16k
     port map (
         dout => kernal0_dout_i,
@@ -898,6 +957,13 @@ end process;
 ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
 kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
 basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
+casmatch <= '1' when c16_addr(8 downto 4) /= x"11" else '0';
+cass_dout <= "11111" & (cs_io or casmatch or (not tape_adc_act and cass_sense)) & "11";
+
+fl_dout <= fl_dout_i when cs0 = '0' and  roml = 2 else x"FF";
+fh_dout <= fh_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
+cartl_dout <= cartl_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
+carth_dout <= carth_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and openbus_data;
 
@@ -933,6 +999,8 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	tvmode   => tvmode,
 	wide     => '0',
 
+	RAS      => c16_ras,
+	CAS      => c16_cas,
 	RnW      => c16_rnw,
 	ADDR     => c16_addr,
 	DOUT     => c16_dout,
@@ -942,10 +1010,10 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	CS1      => cs1,
 	CS_IO    => cs_io,
 
-	cass_mtr => open,
-	cass_in  => '1',
-	cass_aud => '1',
-	cass_out => open,
+	cass_mtr => cass_motor,
+	cass_in  => cass_read,
+	cass_aud => cass_read and  not cass_sense and not cass_motor,
+	cass_out => cass_write,
 
 	JOY0     => joyB when system_joyswap = '1' else joyA,
 	JOY1     => joyA when system_joyswap = '1' else joyB,
@@ -1057,7 +1125,53 @@ crt_inst : entity work.loader_sd_card
     ioctl_addr        => ioctl_addr,
     ioctl_data        => ioctl_dout,
     ioctl_wr          => ioctl_wr,
-    ioctl_wait        => '0'
+    ioctl_wait        => ioctl_wait
   );
+
+-- synchronize sdram state machine with the ras/cas phases of the c16
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    if c16_ras ='0' and last_ras = '1' then
+      xclkdiv <= (others => '0');
+      last_ras <= c16_ras;
+    else
+      xclkdiv <= xclkdiv + 1;
+    end if;
+  end if;
+end process;
+
+clkref   <= '1' when xclkdiv(3) = '1' else '0';
+
+
+dram_inst: entity work.sdram
+   port map(
+    -- SDRAM side interface
+    SDRAM_CLK  => O_sdram_clk,
+    SDRAM_CKE  => O_sdram_cke,
+    SDRAM_DQ   => IO_sdram_dq,   -- 32 bit bidirectional data bus
+    SDRAM_A    => O_sdram_addr,  -- 11 bit multiplexed address bus
+    SD_DQM     => O_sdram_dqm,   -- two byte masks
+    SDRAM_BA   => O_sdram_ba,    -- two banks
+    SDRAM_nCS  => O_sdram_cs_n,  -- a single chip select
+    SDRAM_nWE  => O_sdram_wen_n, -- write enable
+    SDRAM_nRAS => O_sdram_ras_n, -- row address select
+    SDRAM_nCAS => O_sdram_cas_n, -- columns address select
+    -- cpu/chipset interface
+    init       => not pll_locked,-- init signal after FPGA config to initialize RAM
+    clk        => clk_sys,       -- sdram is accessed at 28MHz
+    clkref     => clkref,        -- reference clock to sync to
+    din        => sdram_din,      -- data input from chipset/cpu
+    dout       => ram_dout_i,    -- data output to chipset/cpu
+    addr       => sdram_addr,
+    oe         => c16_rnw,       -- cpu/chipset requests read/wrie
+    we         => sdram_wr       -- cpu/chipset requests write
+  );
+
+c16_sdram_wr <= not c16_cas and not c16_rnw;
+sdram_wr <= c16_sdram_wr when clkref = '1' else dl_wr when (ioctl_download and load_prg) = '1' else '0';
+
+sdram_addr <= 7x"00" & dl_addr when (ioctl_download and load_prg) = '1' else 7x"00" & c16_addr;
+sdram_din  <= dl_data when (ioctl_download and load_prg) = '1' else c16_dout;
 
 end Behavioral_top;

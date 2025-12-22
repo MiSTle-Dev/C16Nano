@@ -51,6 +51,9 @@ module ted
 	output        ce_pix,
 	output        irq,
 	output        ba,
+	output reg mux,
+	output reg ras,
+	output reg cas,
 	output reg    cs_io,
 	output reg    cs_ram,
 	output reg    cs0,
@@ -1251,13 +1254,18 @@ assign color=colorreg;
 always @(posedge clk)		// Generating RAS, internal CAS and MUX signals based on clk28 cycle numbers. Not 100% precise reproduction of original TED timing but still in dram specifications
 	case (phicounter)			// one clk28 cycle is 35.35ns
 	1:		begin	
+				ras<=1;
+				cas<=1;
+				mux<=1;
 				cs_io<=1;
 				cs_ram<=1;
 				cs0<=1;
 				cs1<=1;
 			end
+	6:		ras<=0;				// RAS goes low 35ns before MUX (20ns on real system)
 	7:		if(io) cs_io<=0;
 			else if(~tedreg) begin
+				mux<=0;				// MUX goes low when double phi changes to high at half double clock cycle, CS0,CS1 changes together with MUX when needed
 				cs_ram<=0;
 				if(rw & ((~ramen & ~dotfetch_reg) | (charrom & dotfetch_reg ))) begin	// ROM chip select is controlled by ramen register or by charrom register depending on whether dot data is fetched from bus
 					cs0<=~lowrom;	         // Basic area
@@ -1265,6 +1273,8 @@ always @(posedge clk)		// Generating RAS, internal CAS and MUX signals based on 
 					cs_ram<=lowrom|highrom; // RAM
 				end
 			end
+	8:		if ((rw & cs0 & cs1 & ~io & ~tedreg) || (~rw & ~io & ~tedreg))
+				cas<=0;
 	endcase
 
 
