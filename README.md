@@ -29,7 +29,8 @@ This port has the following changes and enhancements:
 * [USB XBOX 360 Controller](https://en.wikipedia.org/wiki/Xbox_360_controller) as Joystick
 * Joystick emulation on Keyboard Numpad
 
-Original C16 core by [Istvan Hegedus](https://github.com/ishe).  
+Original C16 core by [Istvan Hegedus](https://github.com/ishe) -> [hackaday](https://hackaday.io/project/11460-fpgated)  
+TED core component version 1.8
 
 ### Original ReadMe (has outdated and non-related info)
 

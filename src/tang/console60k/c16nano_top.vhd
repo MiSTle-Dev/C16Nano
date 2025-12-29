@@ -321,45 +321,8 @@ signal serial_tx_data   : std_logic_vector(7 downto 0);
 signal serial_rx_available : std_logic_vector(7 downto 0);
 signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
-
-signal tap_play_addr   : std_logic_vector(22 downto 0);
-signal tap_last_addr   : std_logic_vector(22 downto 0);
-signal tap_version     : std_logic_vector(1 downto 0);
-signal tap_data        : std_logic_vector(7 downto 0);
-signal tap_data_in     : std_logic_vector(7 downto 0);
-signal cass_write      : std_logic;
-signal cass_motor      : std_logic;
-signal cass_sense      : std_logic;
-signal cass_read       : std_logic;
-signal cass_run        : std_logic;
-signal cass_finish     : std_logic;
-signal cass_snd        : std_logic;
-signal tap_download    : std_logic;
-signal tap_reset       : std_logic;
-signal tap_loaded      : std_logic;
-signal tap_play_btn    : std_logic;
-signal tap_wrreq       : std_logic;
-signal tap_wrfull      : std_logic;
-signal tap_autoplay    : std_logic;
-signal tap_sdram_oe    : std_logic := '0';
-signal tap_wr          : std_logic := '0';
-signal cass_aud        : std_logic;
-signal clkref          : std_logic;
-signal sdram_oe        : std_logic;
-signal sdram_wr        : std_logic;
-signal last_ras        : std_logic;
-signal xclkdiv         : std_logic_vector(3 downto 0);
-signal c16_ras         : std_logic;
-signal c16_cas         : std_logic;
-signal ioctl_wr_d      : std_logic;
-signal resetc16_d      : std_logic;
-signal ioctl_wait      : std_logic := '0';
-signal tap_rd          : std_logic; 
-signal tap_data_ready  : std_logic := '1';
-signal tap_cycle       : std_logic;
-signal tape_adc_act    : std_logic;
-signal casmatch        : std_logic;
-constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
+signal c16_ras  : std_logic;
+signal c16_cas  : std_logic;
 
 component CLKDIV
     generic (
@@ -630,9 +593,8 @@ generic map (
 
 audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
 
-cass_aud <= cass_read and not cass_sense and not cass_motor;
-audio_l <= (audio_data_l & "00") or (4x"00" & cass_aud & 13x"00000");
-audio_r <= audio_l;
+audio_l <= audio_data_l & "00";
+audio_r <= audio_data_l & "00";
 
 video_inst: entity work.video
 generic map
@@ -646,7 +608,7 @@ port map(
       clk_pixel_x5 => clk_pixel_x5,
       audio_div    => audio_div,
       
-      ntscmode  => not palmode,
+      ntscmode  => palmode,
       vb_in     => vblank,
       hb_in     => hblank,
       hs_in_n   => hsync,
@@ -1055,9 +1017,6 @@ end process;
 ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
 kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
 basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
-casmatch <= '1' when c16_addr(8 downto 4) /= x"11" else '0';
-cass_dout <= "11111" & (cs_io or casmatch or (not tape_adc_act and cass_sense)) & "11";
-
 fl_dout <= fl_dout_i when cs0 = '0' and  roml = 2 else x"FF";
 fh_dout <= fh_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
 cartl_dout <= cartl_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
@@ -1086,7 +1045,6 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	RESET    => xreset,
 	INWAIT   => '0',
 	PAL      => palmode,
-	CE_PIX   => open,
 	HSYNC    => hsync,
 	VSYNC    => vsync,
 	HBLANK   => hblank,
@@ -1094,8 +1052,6 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	RED      => r,
 	GREEN    => g,
 	BLUE     => b,
-	tvmode   => tvmode,
-	wide     => '0',
 
 	RAS      => c16_ras,
 	CAS      => c16_cas,
@@ -1108,10 +1064,10 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	CS1      => cs1,
 	CS_IO    => cs_io,
 
-	cass_mtr => cass_motor,
-	cass_in  => cass_read,
-	cass_aud => cass_read and  not cass_sense and not cass_motor,
-	cass_out => cass_write,
+	cass_mtr => open,
+	cass_in  => '1',
+	cass_aud => '1',
+	cass_out => open,
 
 	JOY0     => joyB when system_joyswap = '1' else joyA,
 	JOY1     => joyA when system_joyswap = '1' else joyB,
@@ -1223,7 +1179,7 @@ crt_inst : entity work.loader_sd_card
     ioctl_addr        => ioctl_addr,
     ioctl_data        => ioctl_dout,
     ioctl_wr          => ioctl_wr,
-    ioctl_wait        => ioctl_wait
+    ioctl_wait        => '0'
   );
 
 end Behavioral_top;
