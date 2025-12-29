@@ -613,7 +613,7 @@ port map(
       clk_pixel_x5 => clk_pixel_x5,
       audio_div    => audio_div,
       
-      ntscmode  => not palmode,
+      ntscmode  => palmode,
       vb_in     => vblank,
       hb_in     => hblank,
       hs_in_n   => hsync,
@@ -988,7 +988,6 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	RESET    => xreset,
 	INWAIT   => '0',
 	PAL      => palmode,
-	CE_PIX   => open,
 	HSYNC    => hsync,
 	VSYNC    => vsync,
 	HBLANK   => hblank,
@@ -996,8 +995,6 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	RED      => r,
 	GREEN    => g,
 	BLUE     => b,
-	tvmode   => tvmode,
-	wide     => '0',
 
 	RAS      => c16_ras,
 	CAS      => c16_cas,
@@ -1168,7 +1165,7 @@ dram_inst: entity work.sdram
     we         => sdram_wr       -- cpu/chipset requests write
   );
 
-c16_sdram_wr <= not c16_cas and not c16_rnw;
+c16_sdram_wr <= not c16_rnw;
 sdram_wr <= c16_sdram_wr when clkref = '1' else dl_wr when (ioctl_download and load_prg) = '1' else '0';
 
 sdram_addr <= 7x"00" & dl_addr when (ioctl_download and load_prg) = '1' else 7x"00" & c16_addr;

@@ -36,7 +36,6 @@ module C16
 	input         RESET,
 	input         INWAIT,
 
-	output        CE_PIX,
 	output        HSYNC,
 	output        VSYNC,
 	output        CSYNC,
@@ -45,8 +44,6 @@ module C16
 	output  [3:0] RED,
 	output  [3:0] GREEN,
 	output  [3:0] BLUE,
-	input   [1:0] tvmode,
-	input         wide,
 
 	output        RAS,
 	output        CAS,
@@ -136,7 +133,7 @@ mos8501 cpu
 	.data_out(cpu_data), 
 	.address(cpu_addr),
 	.gate_in(1'b0),
-	.rw(RnW),								// rw=high read, rw=low write
+	.rw(RnW),// rw=high read, rw=low write
 	.port_in(port_in),
 	.port_out(port_out),
 	.rdy(rdy),
@@ -144,13 +141,14 @@ mos8501 cpu
 );
 
 // -----------------------------------------------------------------------
+//wire [16:0] mix_audio = {ted_audio,ted_audio,ted_audio} + {cass_aud, 10'd0};
+//assign sound = ($signed(mix_audio) > $signed(17'd32767)) ? 16'd32767 : ($signed(mix_audio) < $signed(-17'd32768)) ? $signed(-16'd32768) : mix_audio[15:0];
 
-wire [16:0] mix_audio = {ted_audio,ted_audio,ted_audio} + {cass_aud, 10'd0};
-assign sound = ($signed(mix_audio) > $signed(17'd32767)) ? 16'd32767 : ($signed(mix_audio) < $signed(-17'd32768)) ? $signed(-16'd32768) : mix_audio[15:0];
+assign sound=digi_sound;
 
 // -----------------------------------------------------------------------
 
-wire [4:0] ted_audio;
+wire signed [15:0] digi_sound;
 // TED 8360 instance	
 ted mos8360
 (
@@ -166,10 +164,8 @@ ted mos8360
 	.csync(CSYNC),
 	.hsync(HSYNC),
 	.vsync(VSYNC),
-	.wide(wide),
 	.hblank(HBLANK),
-	.vblank_out(VBLANK),
-	.ce_pix(CE_PIX),
+	.vblank(VBLANK),
 	.irq(irq_n),
 	.ba(rdy),
 	.mux(mux),
@@ -181,10 +177,13 @@ ted mos8360
 	.cs_io(CS_IO),
 	.aec(aec),
 	.k(kbus),
-	.snd(ted_audio),
+	.snd(),
+	.digi_sound(digi_sound),
 	.pal(PAL),
-	.tvmode(tvmode),
-	.cpuenable(cpuenable)
+	.cpuenable(cpuenable),
+	.burst(),
+	.even(),
+	.data_oe()
 );
 
 // Color decoder to 12bit RGB	
