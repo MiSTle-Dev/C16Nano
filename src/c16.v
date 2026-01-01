@@ -47,6 +47,7 @@ module C16
 
 	output        RAS,
 	output        CAS,
+	output        refresh,
 	output        RnW,
 	output [15:0] ADDR,
 	input   [7:0] DIN,
@@ -183,7 +184,8 @@ ted mos8360
 	.cpuenable(cpuenable),
 	.burst(),
 	.even(),
-	.data_oe()
+	.data_oe(),
+	.refresh_o(refresh)
 );
 
 // Color decoder to 12bit RGB	

@@ -297,7 +297,6 @@ signal serial_tx_data   : std_logic_vector(7 downto 0);
 signal serial_rx_available : std_logic_vector(7 downto 0);
 signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
-
 signal tap_play_addr   : std_logic_vector(22 downto 0);
 signal tap_last_addr   : std_logic_vector(22 downto 0);
 signal tap_version     : std_logic_vector(1 downto 0);
@@ -320,26 +319,21 @@ signal tap_autoplay    : std_logic;
 signal tap_sdram_oe    : std_logic := '0';
 signal tap_wr          : std_logic := '0';
 signal cass_aud        : std_logic;
-signal clkref          : std_logic;
-signal sdram_oe        : std_logic;
-signal sdram_wr        : std_logic;
-signal last_ras        : std_logic;
-signal xclkdiv         : std_logic_vector(3 downto 0);
-signal c16_ras         : std_logic;
-signal c16_cas         : std_logic;
 signal ioctl_wr_d      : std_logic;
-signal resetc16_d      : std_logic;
 signal ioctl_wait      : std_logic := '0';
 signal tap_rd          : std_logic; 
 signal tap_data_ready  : std_logic := '1';
 signal tap_cycle       : std_logic;
 signal tape_adc_act    : std_logic;
 signal casmatch        : std_logic;
-signal c16_sdram_wr    : std_logic;
-signal c16_sdram_oe    : std_logic;
+signal sdram_cs        : std_logic;
+signal sdram_oe        : std_logic;
+signal sdram_wr        : std_logic;
 signal sdram_addr      : std_logic_vector(22 downto 0);
 signal sdram_din       : std_logic_vector(7 downto 0);
-signal last_clkref     : std_logic;
+signal c16_refresh     : std_logic;
+signal core_wait       : std_logic;
+signal refresh         : std_logic;
 
 constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
 
@@ -841,17 +835,6 @@ port map(
 
 --/////////////////   ROM   /////////////////////////
 
-process(clk_sys)
-begin
-  if rising_edge(clk_sys) then
-    ram_we <= '0';
-  	old_cs <= cs_ram;
-    if old_cs = '1' and cs_ram = '0' then
-      ram_we <= not c16_rnw;
-    end if;
-  end if;
-end process;
-
 kernal_inst: entity work.Gowin_SDPB_kernal_rom_16k
     port map (
         dout => kernal0_dout_i,
@@ -897,20 +880,20 @@ basic_inst: entity work.Gowin_pROM_basic
 --        ad => c16_addr(13 downto 0)
 --    );
 
---Cart_low_loadable_rom_gw5a: entity work.Gowin_SDPB_rom_16k
---    port map (
---        dout => cartl_dout_i,
---        clka => clk_sys,
---        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_crt = '1' else '0',
---        clkb => clk_sys,
---        ceb => '1',
---        reseta => '0',
---        resetb => '0',
---        oce => '1',
---        ada => ioctl_addr(13 downto 0),
---        din => ioctl_dout,
---        adb => c16_addr(13 downto 0)
---		);
+Cart_low_loadable_rom: entity work.Gowin_SDPB_rom_16k
+    port map (
+        dout => cartl_dout_i,
+        clka => clk_sys,
+        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_crt = '1' else '0',
+        clkb => clk_sys,
+        ceb => '1',
+        reseta => '0',
+        resetb => '0',
+        oce => '1',
+        ada => ioctl_addr(13 downto 0),
+        din => ioctl_dout,
+        adb => c16_addr(13 downto 0)
+		);
 
 --Cart_high_loadable_rom_gw5a: entity work.Gowin_SDPB_rom_16k
 --    port map (
@@ -965,7 +948,7 @@ fh_dout <= fh_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
 cartl_dout <= cartl_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
 carth_dout <= carth_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
 
-c16_din <= ram_dout and kernal0_dout and basic_dout and openbus_data;
+c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and openbus_data;
 
 process(all)
 begin
@@ -986,7 +969,7 @@ xreset <= resetc16 or cart_reset or detach_reset;
  (
 	CLK28    => clk_sys,
 	RESET    => xreset,
-	INWAIT   => '0',
+	INWAIT   => core_wait,
 	PAL      => palmode,
 	HSYNC    => hsync,
 	VSYNC    => vsync,
@@ -996,8 +979,9 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	GREEN    => g,
 	BLUE     => b,
 
-	RAS      => c16_ras,
-	CAS      => c16_cas,
+	RAS      => open,
+	CAS      => open,
+  refresh  => c16_refresh,
 	RnW      => c16_rnw,
 	ADDR     => c16_addr,
 	DOUT     => c16_dout,
@@ -1042,9 +1026,10 @@ xreset <= resetc16 or cart_reset or detach_reset;
   );
 
 process(clk_sys)
+  variable wait_cnt : integer;
 begin
   if rising_edge(clk_sys) then
-  dl_wr <= '0';
+  ioctl_wr_d <= ioctl_wr;
   old_download <= ioctl_download;
 
   if (system_reset(1) or detach_reset) = '1' then
@@ -1053,20 +1038,35 @@ begin
     cart_reset <= ioctl_download;
   end if;
 
+  if resetc16 = '1' then 
+    dl_wr <= '0'; 
+    wait_cnt := 0;
+    ioctl_wait <= '0';
+  end if;
+
+  if wait_cnt /= 0 then
+    wait_cnt := wait_cnt - 1;
+  elsif wait_cnt = 0 then 
+    dl_wr <= '0';
+    ioctl_wait <= '0';
+  end if;
+
   if ioctl_download ='1' and load_prg = '1' then
     state <= x"0";
-    if ioctl_wr = '1' then
+    if ioctl_wr_d = '0' and ioctl_wr = '1' then
       if ioctl_addr = 0 then 
         addr(7 downto 0) <= ioctl_dout;
       elsif ioctl_addr = 1 then 
         addr(15 downto 8) <= ioctl_dout;
       else
-				dl_addr <= addr;
+        wait_cnt := 32;
+        ioctl_wait <= '1';
+        dl_addr <= addr;
 				dl_data <= ioctl_dout;
 				dl_wr   <= '1';
 				addr    <= addr + 1;
 			end if;
-   end if;
+    end if;
   end if;
 
   if old_download = '1' and ioctl_download = '0' and load_prg = '1' then
@@ -1078,14 +1078,14 @@ begin
   end if;
 
   case(state) is
-      when x"1" => dl_addr <= x"002d"; dl_data <= addr(7 downto 0); dl_wr <= '1';
-      when x"3" => dl_addr <= x"002e"; dl_data <= addr(15 downto 8); dl_wr <= '1';
-      when x"5" => dl_addr <= x"002f"; dl_data <= addr(7 downto 0); dl_wr <= '1';
-      when x"7" => dl_addr <= x"0030"; dl_data <= addr(15 downto 8); dl_wr <= '1';
-      when x"9" => dl_addr <= x"0031"; dl_data <= addr(7 downto 0); dl_wr <= '1';
-      when x"B" => dl_addr <= x"0032"; dl_data <= addr(15 downto 8); dl_wr <= '1';
-      when x"D" => dl_addr <= x"009d"; dl_data <= addr(7 downto 0); dl_wr <= '1';
-      when x"F" => dl_addr <= x"009e"; dl_data <= addr(15 downto 8); dl_wr <= '1';
+      when x"1" => dl_addr <= x"002d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
+      when x"3" => dl_addr <= x"002e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
+      when x"5" => dl_addr <= x"002f"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
+      when x"7" => dl_addr <= x"0030"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
+      when x"9" => dl_addr <= x"0031"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
+      when x"B" => dl_addr <= x"0032"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
+      when x"D" => dl_addr <= x"009d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
+      when x"F" => dl_addr <= x"009e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
       when others =>
   end case;
 
@@ -1125,50 +1125,37 @@ crt_inst : entity work.loader_sd_card
     ioctl_wait        => ioctl_wait
   );
 
--- synchronize sdram state machine with the ras/cas phases of the c16
-process(clk_sys)
-begin
-  if rising_edge(clk_sys) then
-    if c16_ras ='0' and last_ras = '1' then
-      xclkdiv <= (others => '0');
-      last_ras <= c16_ras;
-    else
-      xclkdiv <= xclkdiv + 1;
-    end if;
-  end if;
-end process;
-
-clkref   <= '1' when xclkdiv(3) = '1' else '0';
-
-
-dram_inst: entity work.sdram
+dram_inst: entity work.sdram8
    port map(
     -- SDRAM side interface
-    SDRAM_CLK  => O_sdram_clk,
-    SDRAM_CKE  => O_sdram_cke,
-    SDRAM_DQ   => IO_sdram_dq,   -- 32 bit bidirectional data bus
-    SDRAM_A    => O_sdram_addr,  -- 11 bit multiplexed address bus
-    SD_DQM     => O_sdram_dqm,   -- two byte masks
-    SDRAM_BA   => O_sdram_ba,    -- two banks
-    SDRAM_nCS  => O_sdram_cs_n,  -- a single chip select
-    SDRAM_nWE  => O_sdram_wen_n, -- write enable
-    SDRAM_nRAS => O_sdram_ras_n, -- row address select
-    SDRAM_nCAS => O_sdram_cas_n, -- columns address select
+    sd_clk  => O_sdram_clk,
+    sd_cke  => O_sdram_cke,
+    sd_data => IO_sdram_dq,   -- 32 bit bidirectional data bus
+    sd_addr => O_sdram_addr,  -- 11 bit multiplexed address bus
+    sd_dqm  => O_sdram_dqm,   -- two byte masks
+    sd_ba   => O_sdram_ba,    -- two banks
+    sd_cs   => O_sdram_cs_n,  -- a single chip select
+    sd_we   => O_sdram_wen_n, -- write enable
+    sd_ras  => O_sdram_ras_n, -- row address select
+    sd_cas  => O_sdram_cas_n, -- columns address select
     -- cpu/chipset interface
-    init       => not pll_locked,-- init signal after FPGA config to initialize RAM
+    reset_n    => pll_locked,-- init signal after FPGA config to initialize RAM
     clk        => clk_sys,       -- sdram is accessed at 28MHz
-    clkref     => clkref,        -- reference clock to sync to
+    refresh    => refresh,
     din        => sdram_din,      -- data input from chipset/cpu
     dout       => ram_dout_i,    -- data output to chipset/cpu
     addr       => sdram_addr,
-    oe         => c16_rnw,       -- cpu/chipset requests read/wrie
-    we         => sdram_wr       -- cpu/chipset requests write
+    ds         => "00",
+    cs         => sdram_cs,
+    we         => sdram_wr
   );
 
-c16_sdram_wr <= not c16_rnw;
-sdram_wr <= c16_sdram_wr when clkref = '1' else dl_wr when (ioctl_download and load_prg) = '1' else '0';
+  refresh <= '0' when (ioctl_download and load_prg) = '1' else c16_refresh;
+  core_wait <= '1' when (ioctl_download and load_prg) = '1' else '0';
 
-sdram_addr <= 7x"00" & dl_addr when (ioctl_download and load_prg) = '1' else 7x"00" & c16_addr;
-sdram_din  <= dl_data when (ioctl_download and load_prg) = '1' else c16_dout;
+  sdram_cs <= dl_wr when (ioctl_download and load_prg) = '1' else not cs_ram;
+  sdram_wr <= dl_wr when (ioctl_download and load_prg) = '1' else not c16_rnw;
+  sdram_addr <= 7x"00" & dl_addr when (ioctl_download and load_prg) = '1' else 7x"00" & c16_addr;
+  sdram_din  <= dl_data when (ioctl_download and load_prg) = '1' else c16_dout;
 
 end Behavioral_top;

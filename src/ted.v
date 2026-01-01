@@ -79,7 +79,8 @@ module ted
 	output        vsync,
 	output        burst,                    //	burst enabler signal for composite video generator
 	output        even,                     // signals even scanlines for PAL encoder
-	output        data_oe                   // used for databus OE signal when TED places data on bus (active high
+	output        data_oe,                  // used for databus OE signal when TED places data on bus (active high
+    output        refresh_o // signals dram refresh cycle
 );
 
 
@@ -354,6 +355,8 @@ always @(posedge clk)											// refresh single clock control
 	else if(hpos_296)
 		refresh<=1;
 	end
+
+assign refresh_o= refresh;
 
 always @(posedge clk)											// refresh counter increment control
 	begin

@@ -1,7 +1,7 @@
 # C16Nano
 Commodore C16 Plus/4 core for Tang FPGA boards
 
-The C16Nano is a port of the [MiSTer](https://github.com/MiSTer-devel/C16_MiSTer) core for the [C16](https://en.wikipedia.org/wiki/Commodore_16) homecomputer:
+The C16Nano is a port of the [MiSTer](https://github.com/MiSTer-devel/C16_MiSTer) core with numerous changes (DRAM, TED core 1.8 etc.) for the [C16](https://en.wikipedia.org/wiki/Commodore_16) homecomputer:
 
 | Board      | FPGA       | support |Note|
 | ---        |        -   | -     |-|
@@ -9,8 +9,6 @@ The C16Nano is a port of the [MiSTer](https://github.com/MiSTer-devel/C16_MiSTer
 | [Tang Nano 20k](https://wiki.sipeed.com/nano20k)     | [GW2AR](https://www.gowinsemi.com/en/product/detail/38/)  | HDMI ||
 
 This project relies on a MPU being connected to the FPGA (onboard BL616 or external one). --> [MiSTle-Dev wiki](https://github.com/MiSTle-Dev/.github/wiki) <--  
-
-...still a work in progress !  
 
 <img src="./.assets/C16Nano.png" alt="image" width="80%" height="auto">
 
@@ -29,8 +27,7 @@ This port has the following changes and enhancements:
 * [USB XBOX 360 Controller](https://en.wikipedia.org/wiki/Xbox_360_controller) as Joystick
 * Joystick emulation on Keyboard Numpad
 
-Original C16 core by [Istvan Hegedus](https://github.com/ishe) -> [hackaday](https://hackaday.io/project/11460-fpgated)  
-TED core component version 1.8
+Original C16 core by [Istvan Hegedus](https://github.com/ishe). See also the [hackaday](https://hackaday.io/project/11460-fpgated) article. 
 
 ### Original ReadMe (has outdated and non-related info)
 
