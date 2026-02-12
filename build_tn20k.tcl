@@ -68,7 +68,7 @@ set_option -vhdl_std vhd2008
 set_option -top_module c16nano_top
 set_option -use_mspi_as_gpio 1
 set_option -use_sspi_as_gpio 1
-set_option -use_jtag_as_gpio 1
+set_option -use_jtag_as_gpio 0
 set_option -use_ready_as_gpio 0
 set_option -use_done_as_gpio 0
 set_option -use_reconfign_as_gpio 0
@@ -84,11 +84,11 @@ set_option -route_option 1
 set_option -ireg_in_iob 1
 set_option -oreg_in_iob 1
 set_option -ioreg_in_iob 1
-set_option -multi_boot 1
-set_option -multiboot_address_width 24
-set_option -multiboot_mode single
-set_option -multiboot_spi_flash_address 00000000
-set_option -mspi_jump 0
+set_option -multi_boot 0
+#set_option -multiboot_address_width 24
+#set_option -multiboot_mode single
+#set_option -multiboot_spi_flash_address 00000000
+#set_option -mspi_jump 0
 
 #run syn
 run all

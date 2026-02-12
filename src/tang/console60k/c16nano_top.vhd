@@ -14,23 +14,28 @@ use IEEE.numeric_std.ALL;
 entity c16nano_top is
   port
   (
+    bl616_jtagsel : in std_logic;
     jtagseln    : out std_logic := '0';
     reconfign   : out std_logic := 'Z';
     clk         : in std_logic;
-    reset       : in std_logic; -- S2 button
-    user        : in std_logic; -- S1 button
+    key_reset_n : in std_logic; -- S2 button
+    key_user_n  : in std_logic; -- S1 button
     leds_n      : out std_logic_vector(1 downto 0);
     -- USB-C BL616 UART
     uart_rx     : in std_logic;
-    uart_tx     : out std_logic;
+    --uart_tx     : out std_logic;
     -- monitor port
     bl616_mon_tx : out std_logic;
-    bl616_mon_rx : in std_logic;
+    --bl616_mon_rx : in std_logic;
     -- external hw pin UART
     --uart_ext_rx : in std_logic;
     --uart_ext_tx : out std_logic;
-    -- SPI interface Sipeed M0S Dock external BL616 uC
-    m0s         : inout std_logic_vector(4 downto 0) := (others => 'Z');
+    -- SPI interface external uC
+    pmod_companion_din : in std_logic;
+    pmod_companion_dout : out std_logic;
+    pmod_companion_ss : in std_logic;
+    pmod_companion_clk : in std_logic;
+    pmod_companion_intn : out std_logic;    
     -- SPI connection to onboard BL616
     spi_sclk    : in std_logic;
     spi_csn     : in std_logic;
@@ -108,7 +113,6 @@ attribute syn_keep of clk_sys           : signal is 1;
 attribute syn_keep of clk_pixel_x5      : signal is 1;
 attribute syn_keep of clk_pixel_x5_pal  : signal is 1;
 attribute syn_keep of mspi_clk_x5       : signal is 1;
-attribute syn_keep of m0s               : signal is 1;
 
 signal audio_data_l  : std_logic_vector(15 downto 0);
 signal audio_data_r  : std_logic_vector(15 downto 0);
@@ -323,6 +327,8 @@ signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
 signal c16_ras  : std_logic;
 signal c16_cas  : std_logic;
+signal spi_intn         : std_logic;
+signal boot_button_detected : std_logic := '1';
 
 component CLKDIV
     generic (
@@ -353,36 +359,38 @@ component DCS
 
 begin
 
-  jtagseln <= '0' when pll_locked = '0' or (reset and user) = '0' else '1';
-  reconfign <= 'Z';
-
-  -- BL616 console to hw pins for external USB-UART adapter
-  uart_tx <= bl616_mon_rx;
-  bl616_mon_tx <= uart_rx;
--- ----------------- SPI input parser ----------------------
-process (all)
-begin
-  if pll_locked = '0' then
-    spi_ext <= '0';
-  elsif rising_edge(clk_sys) then
-    if m0s(2) = '0' then
-        spi_ext <= '1';
+  process (pll_locked)
+  begin
+    if rising_edge(pll_locked) then
+      boot_button_detected <= '1' when key_user_n = '0' or key_reset_n = '0' else '0';
     end if;
-  end if;
-end process;
+  end process;
 
-  -- map output data onto both spi outputs
-  spi_io_din  <= m0s(1) when spi_ext = '1' else spi_dat;
-  spi_io_ss   <= m0s(2) when spi_ext = '1' else spi_csn;
-  spi_io_clk  <= m0s(3) when spi_ext = '1' else spi_sclk;
+  -- enable JTAG if any button has been pressed during boot and also once
+  -- the external FPGA Companion has been seen
+  jtagseln <= '1' when (not pll_locked or boot_button_detected or spi_ext or bl616_jtagsel) = '0' else '0';
+  reconfign <= 'Z';  -- <= '0' when bl616_RECONFIGn = '0' else 'Z';
+  -- BL616 console to hw pins for external USB-UART adapter
+  bl616_mon_tx <= uart_rx;
 
-  -- onboard BL616
-  spi_dir     <= spi_io_dout;
-  spi_irqn    <= int_out_n;
-  -- external M0S Dock BL616 / PiPico  / ESP32
-  m0s(0)      <= spi_io_dout;
-  m0s(4)      <= uart_tx_i when spi_ext = '1' else int_out_n;
+  process (clk_sys)
+  begin
+    if rising_edge(clk_sys) then
+      if pll_locked = '0' then
+        spi_ext <= '0';
+      elsif pmod_companion_ss = '0' then
+        spi_ext <= '1';
+      end if;
+    end if;
+  end process;
 
+  spi_io_din <= pmod_companion_din when spi_ext = '1' else spi_dat;
+  spi_io_ss <= pmod_companion_ss when spi_ext = '1' else spi_csn;
+  spi_io_clk <= pmod_companion_clk when spi_ext = '1' else spi_sclk;
+  spi_dir <= spi_io_dout;
+  spi_irqn <= spi_intn;
+  pmod_companion_dout <= spi_io_dout;
+  pmod_companion_intn <= spi_intn;
 
 gamepad_p1: entity work.dualshock2
     port map (
@@ -602,7 +610,7 @@ generic map
   STEREO  => false
 )
 port map(
-      user         => user,
+      user         => '0',
       pll_lock     => pll_locked, 
       clk          => clk_sys,
       clk_pixel_x5 => clk_pixel_x5,
@@ -850,11 +858,11 @@ hid_inst: entity work.hid
   port_in_strobe      => serial_rx_strobe, -- out
   port_in_data        => serial_rx_data, -- out
 
-  int_out_n           => int_out_n,
+  int_out_n           => spi_intn,
   int_in              => unsigned'(x"0" & sdc_int & '0' & hid_int & '0'),
   int_ack             => int_ack,
 
-  buttons             => unsigned'(not user & not reset), -- S0 and S1 buttons on Tang
+  buttons             => unsigned'(not key_user_n & not key_reset_n), -- S2 and S1 buttons
   leds                => open,
   color               => open
 );
