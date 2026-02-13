@@ -14,24 +14,26 @@ use IEEE.numeric_std.ALL;
 entity c16nano_top is
   port
   (
-    jtagseln    : out std_logic := '0';
     reconfign   : out std_logic := 'Z';
     clk         : in std_logic;
-    reset       : in std_logic; -- S2 button
-    user        : in std_logic; -- S1 button
+    key_reset   : in std_logic; -- S2 button
+    key_user    : in std_logic; -- S1 button
     leds_n      : out std_logic_vector(5 downto 0);
     io          : in std_logic_vector(4 downto 0);
     -- USB-C BL616 UART
     uart_rx     : in std_logic;
-    uart_tx     : out std_logic;
+    --uart_tx     : out std_logic;
     -- monitor port
     bl616_mon_tx : out std_logic;
-    bl616_mon_rx : in std_logic;
     -- external hw pin UART
     --uart_ext_rx : in std_logic;
     --uart_ext_tx : out std_logic;
-    -- SPI interface Sipeed M0S Dock external BL616 uC
-    m0s         : inout std_logic_vector(4 downto 0) := (others => 'Z');
+    -- SPI interface external uC
+    pmod_companion_din : in std_logic;
+    pmod_companion_dout : out std_logic;
+    pmod_companion_ss : in std_logic;
+    pmod_companion_clk : in std_logic;
+    pmod_companion_intn : out std_logic;
     -- SPI connection to onboard BL616
     spi_sclk    : in std_logic;
     spi_csn     : in std_logic;
@@ -84,7 +86,6 @@ signal clk_pixel_x5_pal   : std_logic;
 attribute syn_keep : integer;
 attribute syn_keep of clk_sys           : signal is 1;
 attribute syn_keep of clk_pixel_x5      : signal is 1;
-attribute syn_keep of m0s               : signal is 1;
 
 signal audio_data_l  : std_logic_vector(15 downto 0);
 signal audio_data_r  : std_logic_vector(15 downto 0);
@@ -334,6 +335,7 @@ signal sdram_din       : std_logic_vector(7 downto 0);
 signal c16_refresh     : std_logic;
 signal core_wait       : std_logic;
 signal refresh         : std_logic;
+signal spi_intn        : std_logic;
 
 constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
 
@@ -362,37 +364,29 @@ component DL
 end component;
 
 begin
-
-  jtagseln <= '0' when pll_locked = '0' or (reset and user) = '1' else '1';
   reconfign <= 'Z';
 
   -- BL616 console to hw pins for external USB-UART adapter
-  uart_tx <= bl616_mon_rx;
   bl616_mon_tx <= uart_rx;
--- ----------------- SPI input parser ----------------------
-process (all)
-begin
-  if pll_locked = '0' then
-    spi_ext <= '0';
-  elsif rising_edge(clk_sys) then
-    if m0s(2) = '0' then
+
+  process (clk_sys)
+  begin
+    if rising_edge(clk_sys) then
+      if pll_locked = '0' then
+        spi_ext <= '0';
+      elsif pmod_companion_ss = '0' then
         spi_ext <= '1';
+      end if;
     end if;
-  end if;
-end process;
+  end process;
 
-  -- map output data onto both spi outputs
-  spi_io_din  <= m0s(1) when spi_ext = '1' else spi_dat;
-  spi_io_ss   <= m0s(2) when spi_ext = '1' else spi_csn;
-  spi_io_clk  <= m0s(3) when spi_ext = '1' else spi_sclk;
-
-  -- onboard BL616
-  spi_dir     <= spi_io_dout;
-  spi_irqn    <= int_out_n;
-  -- external M0S Dock BL616 / PiPico  / ESP32
-  m0s(0)      <= spi_io_dout;
-  m0s(4)      <= uart_tx_i when spi_ext = '1' else int_out_n;
-
+  spi_io_din <= pmod_companion_din when spi_ext = '1' else spi_dat;
+  spi_io_ss <= pmod_companion_ss when spi_ext = '1' else spi_csn;
+  spi_io_clk <= pmod_companion_clk when spi_ext = '1' else spi_sclk;
+  spi_dir <= spi_io_dout;
+  spi_irqn <= spi_intn;
+  pmod_companion_dout <= spi_io_dout;
+  pmod_companion_intn <= spi_intn;
 
 gamepad_p1: entity work.dualshock2
     port map (
@@ -601,7 +595,7 @@ generic map
   STEREO  => false
 )
 port map(
-      user         => user,
+      user         => '0',
       pll_lock     => pll_locked, 
       clk          => clk_sys,
       clk_pixel_x5 => clk_pixel_x5,
@@ -801,11 +795,11 @@ hid_inst: entity work.hid
   port_in_strobe      => serial_rx_strobe, -- out
   port_in_data        => serial_rx_data, -- out
 
-  int_out_n           => int_out_n,
+  int_out_n           => spi_intn,
   int_in              => unsigned'(x"0" & sdc_int & '0' & hid_int & '0'),
   int_ack             => int_ack,
 
-  buttons             => unsigned'(user & reset),
+  buttons             => unsigned'(key_user & key_reset), -- S2 and S1 buttons
   leds                => open,
   color               => ws2812_color
 );
