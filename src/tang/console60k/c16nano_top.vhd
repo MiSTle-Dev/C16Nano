@@ -877,7 +877,7 @@ hid_inst: entity work.hid
 flash_inst: entity work.flash 
 port map(
     clk       => flash_clk,
-    resetn    => flash_lock,
+    resetn    => flash_lock  and jtagseln,
     ready     => flash_ready,
     busy      => open,
     address   => (X"7" & "000" & dos_sel & c1541rom_addr),
