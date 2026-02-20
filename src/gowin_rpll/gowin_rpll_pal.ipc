@@ -1,6 +1,6 @@
 [General]
-ipc_version=4
 file=gowin_rpll_pal
+ipc_version=4
 module=Gowin_rPLL_pal
 target_device=gw2ar18c-000
 type=clock_rpll

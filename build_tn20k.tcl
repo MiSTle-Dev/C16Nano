@@ -44,8 +44,6 @@ add_file src/c1541/gcr_floppy.vhd
 add_file src/c1541/via6522.vhd
 add_file src/gowin_dpb/gowin_dpb_16kram.vhd
 add_file src/gowin_prom/gowin_prom_basic.vhd
-add_file src/gowin_rpll/gowin_rpll_flash.vhd
-add_file src/gowin_rpll/gowin_rpll_pal.vhd
 add_file src/gowin_sdpb/gowin_sdpb_kernal_rom_16k.vhd
 add_file src/gowin_sp/gowin_sp_2k.vhd
 add_file src/gowin_sp/gowin_sp_8k.vhd
