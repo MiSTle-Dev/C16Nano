@@ -52,8 +52,6 @@
         <File path="src/fifo_sc_hs/fifo_sc_hs.vhd" type="file.vhdl" enable="1"/>
         <File path="src/gowin_dpb/gowin_dpb_16kram.vhd" type="file.vhdl" enable="1"/>
         <File path="src/gowin_prom/gowin_prom_basic.vhd" type="file.vhdl" enable="1"/>
-        <File path="src/gowin_rpll/gowin_rpll_flash.vhd" type="file.vhdl" enable="1"/>
-        <File path="src/gowin_rpll/gowin_rpll_pal.vhd" type="file.vhdl" enable="1"/>
         <File path="src/gowin_sdpb/gowin_sdpb_kernal_rom_16k.vhd" type="file.vhdl" enable="1"/>
         <File path="src/gowin_sdpb/gowin_sdpb_rom_16k.vhd" type="file.vhdl" enable="1"/>
         <File path="src/gowin_sp/gowin_sp_2k.vhd" type="file.vhdl" enable="1"/>
@@ -65,6 +63,5 @@
         <File path="src/tang/tn20k/c16nano_top.vhd" type="file.vhdl" enable="1"/>
         <File path="src/tang/tn20k/c16nano.cst" type="file.cst" enable="1"/>
         <File path="src/tang/tn20k/c16nano.sdc" type="file.sdc" enable="1"/>
-        <File path="src/misc/c16_xml.hex" type="file.other" enable="1"/>
     </FileList>
 </Project>

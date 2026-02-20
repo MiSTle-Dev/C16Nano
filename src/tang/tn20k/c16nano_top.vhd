@@ -1,6 +1,6 @@
 -------------------------------------------------------------------------
 --  C16 Plus/4 Top level for Tang Nano 20k
---  2025 Stefan Voss
+--  2025...2026 Stefan Voss
 --  based on the work of many others
 --
 --  FPGATED v1.0 Copyright 2013-2016 Istvan Hegedus
@@ -336,8 +336,53 @@ signal c16_refresh     : std_logic;
 signal core_wait       : std_logic;
 signal refresh         : std_logic;
 signal spi_intn        : std_logic;
+signal pll_locked_comb : std_logic;
 
 constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
+
+component rPLL
+    generic (
+        FCLKIN: in string := "100.0";
+        DEVICE: in string := "GW2A-18";
+        DYN_IDIV_SEL: in string := "false";
+        IDIV_SEL: in integer := 0;
+        DYN_FBDIV_SEL: in string := "false";
+        FBDIV_SEL: in integer := 0;
+        DYN_ODIV_SEL: in string := "false";
+        ODIV_SEL: in integer := 8;
+        PSDA_SEL: in string := "0000";
+        DYN_DA_EN: in string := "false";
+        DUTYDA_SEL: in string := "1000";
+        CLKOUT_FT_DIR: in bit := '1';
+        CLKOUTP_FT_DIR: in bit := '1';
+        CLKOUT_DLY_STEP: in integer := 0;
+        CLKOUTP_DLY_STEP: in integer := 0;
+        CLKOUTD3_SRC: in string := "CLKOUT";
+        CLKFB_SEL: in string := "internal";
+        CLKOUT_BYPASS: in string := "false";
+        CLKOUTP_BYPASS: in string := "false";
+        CLKOUTD_BYPASS: in string := "false";
+        CLKOUTD_SRC: in string := "CLKOUT";
+        DYN_SDIV_SEL: in integer := 2
+    );
+    port (
+        CLKOUT: out std_logic;
+        LOCK: out std_logic;
+        CLKOUTP: out std_logic;
+        CLKOUTD: out std_logic;
+        CLKOUTD3: out std_logic;
+        RESET: in std_logic;
+        RESET_P: in std_logic;
+        CLKIN: in std_logic;
+        CLKFB: in std_logic;
+        FBDSEL: in std_logic_vector(5 downto 0);
+        IDSEL: in std_logic_vector(5 downto 0);
+        ODSEL: in std_logic_vector(5 downto 0);
+        PSDA: in std_logic_vector(3 downto 0);
+        DUTYDA: in std_logic_vector(3 downto 0);
+        FDLY: in std_logic_vector(3 downto 0)
+    );
+end component;
 
 component CLKDIV
     generic (
@@ -634,12 +679,48 @@ port map(
 --
 -- NTSC 28.636299 143,181495, PAL 28.384615 141,923075
 
-mainclock_pal: entity work.Gowin_rPLL_pal
-    port map (
-        clkout => clk_pixel_x5,
-        lock => pll_locked,
-        clkin => clk
-    );
+mainclock_pal: rPLL
+        generic map (
+            FCLKIN => "27",
+            DEVICE => "GW2AR-18C",
+            DYN_IDIV_SEL => "false",
+            IDIV_SEL => 3,
+            DYN_FBDIV_SEL => "false",
+            FBDIV_SEL => 20,
+            DYN_ODIV_SEL => "false",
+            ODIV_SEL => 4,
+            PSDA_SEL => "0000",
+            DYN_DA_EN => "true",
+            DUTYDA_SEL => "1000",
+            CLKOUT_FT_DIR => '1',
+            CLKOUTP_FT_DIR => '1',
+            CLKOUT_DLY_STEP => 0,
+            CLKOUTP_DLY_STEP => 0,
+            CLKFB_SEL => "internal",
+            CLKOUT_BYPASS => "false",
+            CLKOUTP_BYPASS => "false",
+            CLKOUTD_BYPASS => "false",
+            DYN_SDIV_SEL => 2,
+            CLKOUTD_SRC => "CLKOUT",
+            CLKOUTD3_SRC => "CLKOUT"
+        )
+        port map (
+            CLKOUT   => clk_pixel_x5,
+            LOCK     => pll_locked,
+            CLKOUTP  => open,
+            CLKOUTD  => open,
+            CLKOUTD3 => open,
+            RESET    => '0',
+            RESET_P  => '0',
+            CLKIN    => clk,
+            CLKFB    => '0',
+            FBDSEL   => (others => '0'),
+            IDSEL    => (others => '0'),
+            ODSEL    => (others => '0'),
+            PSDA     => (others => '0'),
+            DUTYDA   => (others => '0'),
+            FDLY     => (others => '0')
+        );
 
 div_inst: CLKDIV
 generic map(
@@ -653,15 +734,48 @@ port map(
     CALIB  => '0'
 );
 
-flash_pll_inst: entity work.Gowin_rPLL_flash
-    port map (
-        clkout  => flash_clk,
-        lock    => flash_lock,
-        clkoutp => mspi_clk,
-        clkoutd => clk32,
-        clkin   => clk
-    );
-
+flash_pll_inst:  rPLL
+        generic map (
+            FCLKIN => "27",
+            DEVICE => "GW2AR-18C",
+            DYN_IDIV_SEL => "false",
+            IDIV_SEL => 7,
+            DYN_FBDIV_SEL => "false",
+            FBDIV_SEL => 18,
+            DYN_ODIV_SEL => "false",
+            ODIV_SEL => 8,
+            PSDA_SEL => "1000",
+            DYN_DA_EN => "false",
+            DUTYDA_SEL => "1000",
+            CLKOUT_FT_DIR => '1',
+            CLKOUTP_FT_DIR => '1',
+            CLKOUT_DLY_STEP => 0,
+            CLKOUTP_DLY_STEP => 0,
+            CLKFB_SEL => "internal",
+            CLKOUT_BYPASS => "false",
+            CLKOUTP_BYPASS => "false",
+            CLKOUTD_BYPASS => "false",
+            DYN_SDIV_SEL => 2,
+            CLKOUTD_SRC => "CLKOUT",
+            CLKOUTD3_SRC => "CLKOUT"
+        )
+        port map (
+            CLKOUT   => flash_clk, -- clock Flash controller
+            LOCK     => flash_lock,
+            CLKOUTP  => mspi_clk, -- phase shifted clock SPI Flash
+            CLKOUTD  => clk32,
+            CLKOUTD3 => open,
+            RESET    => '0',
+            RESET_P  => '0',
+            CLKIN    => clk,
+            CLKFB    => '0',
+            FBDSEL   => (others => '0'),
+            IDSEL    => (others => '0'),
+            ODSEL    => (others => '0'),
+            PSDA     => (others => '0'),
+            DUTYDA   => (others => '0'),
+            FDLY     => (others => '1')
+        );
 
 leds_n(5 downto 0) <= not leds(5 downto 0);
 leds(5 downto 1) <= (others => '0');
@@ -804,6 +918,8 @@ hid_inst: entity work.hid
   color               => ws2812_color
 );
 
+pll_locked_comb <= pll_locked and flash_lock;
+
 -- c1541 ROM's SPI Flash
 -- TN20k  Winbond 25Q64JVIQ
 -- TP25k  XTX XT25F64FWOIG
@@ -814,7 +930,7 @@ hid_inst: entity work.hid
 flash_inst: entity work.flash 
 port map(
     clk       => flash_clk,
-    resetn    => flash_lock,
+    resetn    => pll_locked_comb,
     ready     => flash_ready,
     busy      => open,
     address   => (X"2" & "000" & dos_sel & c1541rom_addr),
