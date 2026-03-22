@@ -16,6 +16,7 @@ This project relies on a MPU being connected to the FPGA (onboard BL616 or exter
 
 This port has the following changes and enhancements:
 
+* PAL 720x576p@50Hz / NTSC 720x480p@60Hz HDMI Video and Audio Output
 * Choose between C16 (64KB) and Plus/4
 * Cartridge support (*.BIN) for Plus/4 model
 * Disk with write support (*.D64)
