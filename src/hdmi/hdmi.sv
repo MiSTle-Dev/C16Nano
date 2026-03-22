@@ -33,20 +33,25 @@ module hdmi
     parameter bit [7:0] SOURCE_DEVICE_INFORMATION = 8'h00 // See README.md or CTA-861-G for the list of valid codes
 )
 (
-    input user,
     input logic			      clk_pixel_x5,
     input logic			      clk_pixel,
     input logic			      clk_audio,
     // synchronous reset back to 0,0
     input logic			      reset,
-    input logic [1:0]		      stmode, // atari st video mode, 0=60hz ntsc, 1=50hz pal, 2=mono
-    input			      wide,   // try to adopt to wide (4:3) screens
-    input logic [23:0]		      rgb, 
+    input logic [1:0]		  stmode, // atari st video mode, 0=60hz ntsc, 1=50hz pal, 2=mono
+    input logic [1:0]		  screen,   // try to adopt to wide (4:3) screens
+    input logic [23:0]		  rgb, 
     input logic [AUDIO_BIT_WIDTH-1:0] audio_sample_word [1:0],
 
     // These outputs go to your HDMI port
-    output logic [2:0]		      tmds,
-    output logic		      tmds_clock
+`ifdef TMDS_BY_LOGIC
+    output logic [5:0] tmds,       // 6+2 pins/pmod used for hdmi
+    output logic [1:0] tmds_clock
+`else
+   // These outputs go to your HDMI port
+    output logic [2:0] tmds,
+    output logic tmds_clock
+`endif    
 );
 
 localparam int NUM_CHANNELS = 3;
@@ -64,80 +69,45 @@ logic [1:0] invert;
 // Frame height should be 625/525, but has to be 626/526 for Atari ST
 // in PAL/NTSC mode
 
-// The w.... timing variants are using some modified timing and may look
-// on wide screens. Since the displayed area of these is wider than the
-// actual data to be displayed, the start value indicated the number of
-// (black) pixels before the active area starts
+// screen mode 0 is "standard" video with either 720x480 (ntsc) or
+// 720x576 (pal) pixels
+wire std = (screen == 2'd0);   
 
-// c64 mode table
+// C16 mode table
 //                         start     frame   screen s_start   s_len
 // NTSC
-wire [55:0] htiming0  = { 11'd0,  12'd912, 11'd768, 11'd24, 11'd72 }; 
-wire [55:0] whtiming0 = { 11'd40, 12'd912, 11'd928, 11'd16, 11'd32 };  
+wire [55:0] htiming0  = { 11'd912, std?11'd720:11'd768, 11'd16, 11'd62 };
 wire [39:0] vtiming0  = {         10'd524,  10'd480, 10'd9,  10'd6 };
 wire [7:0] cea0 = 8'd2; // CEA is HDMI mode in group 1
    
 // PAL
-wire [54:0] htiming1  = { 11'd0,  12'd912, 11'd768, 11'd24, 11'd72 };  
-wire [54:0] whtiming1 = { 11'd60, 12'd912, 11'd952, 11'd16, 11'd32 };  
-wire [39:0] vtiming1  = {          10'd624, 10'd576,  10'd5,  10'd5 };
+wire [54:0] htiming1  = { 11'd912, std?11'd720:11'd768, 11'd24, 11'd72 };
+wire [39:0] vtiming1  = { 10'd624, 10'd576,  10'd5,  10'd5 };
 wire [7:0] cea1 = 8'd17;
    
 // MONO    640x400@71hz  aspect 1.6    
-wire [55:0] htiming2  = { 11'd0,   12'd896, 11'd640, 11'd24, 11'd72 };
-wire [55:0] whtiming2 = { 11'd40,  12'd896, 11'd720, 11'd24, 11'd72 };
-wire [39:0] vtiming2  = {          10'd501, 10'd400,  10'd5,  10'd5 };  
+wire [43:0] htiming2  = { 11'd896, 11'd640, 11'd24, 11'd72 };
+wire [39:0] vtiming2  = { 10'd501, 10'd400,  10'd5,  10'd5 };  
 wire [7:0] cea2 = 8'd2;
    
-wire [103:0]  timing0 = {  htiming0, vtiming0, cea0 };
-wire [103:0] wtiming0 = { whtiming0, vtiming0, cea0 };
-wire [103:0]  timing1 = {  htiming1, vtiming1, cea1 };
-wire [103:0] wtiming1 = { whtiming1, vtiming1, cea1 };
-wire [103:0]  timing2 = {  htiming2, vtiming2, cea2 };
-wire [103:0] wtiming2 = { whtiming2, vtiming2, cea2 };
+wire [91:0]  timing0 = {  htiming0, vtiming0, cea0 };
+wire [91:0]  timing1 = {  htiming1, vtiming1, cea1 };
+wire [91:0]  timing2 = {  htiming2, vtiming2, cea2 };
 
 // select timing as indicated by control signals coming for Atari ST core
-wire [103:0] timing = 
-         !wide?( (stmode == 2'd0)?timing0:
-                 (stmode == 2'd1)?timing1:
-                  timing2):
-               ( (stmode == 2'd0)?wtiming0:
-                 (stmode == 2'd1)?wtiming1:
-                  wtiming2);
+wire [91:0] timing = 
+            (stmode == 2'd0)?timing0:
+            (stmode == 2'd1)?timing1:
+            timing2;
 
-// demux timing parameters   
-wire [10:0] start_x           = timing[103:93];
+// demux timing parameters, in wide mode make the display wider, so the
+// area actually being used by the ST takes up a smaller fraction of the
+// whole width
+wire [10:0] wide_extra_width  = (screen==2'd2)?11'd48:11'd0;
 
-//wire user_db;
-//debounce_v2 #(
-//  .WIDTH( 1 ),
-//  .SAMPLING_FACTOR( 16 )
-//) DB1 (
-//  .clk( clk_pixel ),
-//  .nrst( 1'b1 ),
-//  .ena( 1'b1 ),
-//  .in( user ),
-//  .out( user_db )
-//);
-
-//reg user_d;
-//reg [11:0] frame_width;
-//always_ff @(posedge clk_pixel)
-//begin
-//    if (reset)
-//    begin
-//        frame_width <= 12'd912;
-//    end
-//    else
-//    begin
-//        user_d <= user_db;
-//    if (user_db && !user_d)
-//        frame_width <= frame_width + 12'd2;
-//    end
-//end
-
-wire [11:0] frame_width       = timing[92:81];
-wire [10:0] screen_width      = timing[80:70];
+wire [10:0] frame_width       = timing[91:81];
+wire [10:0] screen_width_real = timing[80:70];   
+wire [10:0] screen_width      = timing[80:70] + wide_extra_width;
 wire [10:0] hsync_pulse_start = timing[69:59];
 wire [10:0] hsync_pulse_size  = timing[58:48];
 
@@ -165,14 +135,13 @@ always_comb begin
         vsync <= invert[1] ^ (cy >= screen_height + vsync_pulse_start && cy < screen_height + vsync_pulse_start + vsync_pulse_size);
 end
 
-localparam real VIDEO_RATE = 35775000;
-
+localparam real VIDEO_RATE = 28333333;
 // Wrap-around pixel position counters indicating the pixel to be generated by the user in THIS clock and sent out in the NEXT clock.
 always_ff @(posedge clk_pixel)
 begin
     if (reset)
     begin
-        cx <= start_x;
+        cx <= 11'd0;       
         cy <= 10'd0;    // start_y
     end
     else
@@ -285,7 +254,7 @@ generate
             else
             begin
                 mode <= data_island_guard ? 3'd4 : data_island_period ? 3'd3 : video_guard ? 3'd2 : video_data_period ? 3'd1 : 3'd0;
-                video_data <= rgb;
+                video_data <= (cx >= wide_extra_width/2 && cx < (screen_width_real + wide_extra_width/2) && cy < screen_height)?rgb:24'h000000;
                 control_data <= {{1'b0, data_island_preamble}, {1'b0, video_preamble || data_island_preamble}, {vsync, hsync}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
                 data_island_data[11:4] <= packet_data[8:1];
                 data_island_data[3] <= cx != 0;

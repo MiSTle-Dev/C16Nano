@@ -10,7 +10,6 @@ module video
           input    clk_pixel_x5,
           input    pll_lock,
           input [8:0] audio_div,
-          output   v20_en,
 
           input    ntscmode,
           input    vb_in,
@@ -35,7 +34,7 @@ module video
           // values that can be configure by the user via osd          
           input [1:0]  system_scanlines,
           input [1:0]  system_volume,
-          input	       system_wide_screen,
+          input [1:0]  system_screen,
 
           // hdmi/tdms
           output	   tmds_clk_n,
@@ -62,15 +61,6 @@ module video
 
 /* -------------------- HDMI video and audio -------------------- */
 
-reg vic20_en = 0;
-reg [1:0] div = 0;
-
-always @(negedge clk) begin
-	div <= div + 1'd1;
-	vic20_en <= !div;
-end
-assign v20_en = vic20_en;
-
 // generate 48khz audio clock
 reg clk_audio;
 
@@ -95,6 +85,7 @@ video_analyzer video_analyzer (
    .vs(vs_in_n),
    .hs(hs_in_n),
    .de(1'b1),
+   .screen(system_screen),
    .ntscmode(ntscmode),
    .mode(vmode),
    .vreset(vreset)
@@ -105,7 +96,7 @@ wire [5:0] sd_r;
 wire [5:0] sd_g;
 wire [5:0] sd_b;
   
-scandoubler #(12) scandoubler (
+scandoubler #(11) scandoubler (
         // system interface
         .clk_sys(clk),
         .bypass(1'b0),      // bypass in ST high/mono
@@ -192,7 +183,6 @@ hdmi #(
    .VENDOR_NAME( { "MiSTle", 16'd0} ),
    .PRODUCT_DESCRIPTION( {"C64", 64'd0} )
 ) hdmi(
-  .user(user),
   .clk_pixel_x5(clk_pixel_x5),
   .clk_pixel(clk),
   .clk_audio(clk_audio),
@@ -202,7 +192,7 @@ hdmi #(
 
   // video input
   .stmode(vmode),    // current video mode PAL/NTSC/MONO
-  .wide(system_wide_screen),       // adopt to wide screen video
+  .screen(system_screen),
   .reset(vreset),    // signal to synchronize HDMI
   // Atari STE outputs 4 bits per color. Scandoubler outputs 6 bits (to be
   // able to implement dark scanlines) and HDMI expects 8 bits per color
