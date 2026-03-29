@@ -142,12 +142,12 @@ signal system_reset   : std_logic_vector(1 downto 0);
 signal disk_reset     : std_logic;
 signal disk_chg_trg   : std_logic;
 signal disk_chg_trg_d : std_logic;
-signal sd_img_size    : std_logic_vector(31 downto 0);
-signal sd_img_size_d  : std_logic_vector(31 downto 0);
-signal sd_img_mounted : std_logic_vector(5 downto 0);
+signal sd_img_size    : std_logic_vector(63 downto 0);
+signal sd_img_size_d  : std_logic_vector(63 downto 0);
+signal sd_img_mounted : std_logic_vector(7 downto 0);
 signal sd_img_mounted_d : std_logic;
-signal sd_rd          : std_logic_vector(5 downto 0);
-signal sd_wr          : std_logic_vector(5 downto 0);
+signal sd_rd          : std_logic_vector(7 downto 0);
+signal sd_wr          : std_logic_vector(7 downto 0);
 signal disk_lba       : std_logic_vector(31 downto 0);
 signal sd_lba         : std_logic_vector(31 downto 0);
 signal loader_lba     : std_logic_vector(31 downto 0);
@@ -170,7 +170,7 @@ signal disk_g64       : std_logic;
 signal disk_g64_d     : std_logic;
 signal c1541_reset    : std_logic;
 signal c1541_osd_reset : std_logic;
-signal system_wide_screen : std_logic;
+signal system_screen  : std_logic_vector(1 downto 0);
 signal system_floppy_wprot : std_logic_vector(1 downto 0);
 signal leds           : std_logic_vector(5 downto 0);
 signal led1541        : std_logic;
@@ -665,7 +665,7 @@ port map(
       mcu_data  => mcu_data_out,
 
       -- values that can be configure by the user via osd
-      system_wide_screen => system_wide_screen,
+      system_screen => system_screen,
       system_scanlines => system_scanlines,
       system_volume => system_volume,
 
@@ -888,7 +888,7 @@ hid_inst: entity work.hid
   system_reset        => system_reset,
   system_scanlines    => system_scanlines,
   system_volume       => system_volume,
-  system_wide_screen  => system_wide_screen,
+  system_screen       => system_screen,
   system_floppy_wprot => system_floppy_wprot,
   system_port_1       => port_1_sel,
   system_port_2       => port_2_sel,
@@ -1202,6 +1202,9 @@ begin
  end if;
 end process;
 
+sd_rd(7 downto 6) <= (others => '0');
+sd_wr(7 downto 6) <= (others => '0');
+
 crt_inst : entity work.loader_sd_card
   port map (
     clk               => clk_sys,
@@ -1217,14 +1220,14 @@ crt_inst : entity work.loader_sd_card
     sd_rd_data        => sd_rd_data,
     sd_rd_byte_strobe => sd_rd_byte_strobe,
   
-    sd_img_mounted    => sd_img_mounted,
+    sd_img_mounted    => sd_img_mounted(5 downto 0),
     loader_busy       => loader_busy,
     load_crt          => load_crt,
     load_prg          => load_prg,
     load_rom          => load_rom,
     load_tap          => load_tap,
     load_flt          => open,
-    sd_img_size       => sd_img_size,
+    sd_img_size       => sd_img_size(31 downto 0),
     leds              => open,
     img_select        => open,
   
