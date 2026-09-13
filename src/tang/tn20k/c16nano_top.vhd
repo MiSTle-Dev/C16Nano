@@ -8,7 +8,6 @@
 -------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.STD_LOGIC_UNSIGNED.ALL;
 use IEEE.numeric_std.ALL;
 
 entity c16nano_top is
@@ -173,6 +172,9 @@ signal system_floppy_wprot : std_logic_vector(1 downto 0);
 signal leds           : std_logic_vector(5 downto 0);
 signal led1541        : std_logic;
 signal db9_joy        : std_logic_vector(5 downto 0);
+signal joy0_sel       : std_logic_vector(4 downto 0);
+signal joy1_sel       : std_logic_vector(4 downto 0);
+signal kernal_cea     : std_logic;
 signal dos_sel        : std_logic_vector(1 downto 0);
 signal c1541rom_cs    : std_logic;
 signal c1541rom_addr  : std_logic_vector(14 downto 0);
@@ -517,7 +519,7 @@ process(clk_sys, pll_locked)
       disk_chg_trg_d <= disk_chg_trg;
 
       if sd_img_mounted(0) = '1' then
-        img_present <= '0' when sd_img_size = 0 else '1';
+        img_present <= '0' when unsigned(sd_img_size) = 0 else '1';
       end if;
 
       if sd_img_mounted_d = '0' and sd_img_mounted(0) = '1' then
@@ -955,11 +957,13 @@ port map(
 
 --/////////////////   ROM   /////////////////////////
 
+kernal_cea <= '1' when ioctl_wr = '1' and unsigned(ioctl_addr(22 downto 14)) = 0 and load_rom = '1' else '0';
+
 kernal_inst: entity work.Gowin_SDPB_kernal_rom_16k
     port map (
         dout => kernal0_dout_i,
         clka => clk_sys,
-        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_rom = '1' else '0',
+        cea => kernal_cea,
         clkb => clk_sys,
         ceb => '1',
         reseta => '0',
@@ -986,8 +990,8 @@ begin
    cartl <= '0';
    carth <= '0';
   elsif rising_edge(clk_sys) then
-   cartl <= '1' when ioctl_wr = '1' and load_crt ='1' and ioctl_addr(22 downto 14) = 0;
-   carth <= '1' when ioctl_wr = '1' and load_crt ='1' and ioctl_addr(22 downto 14) = 1;
+   cartl <= '1' when ioctl_wr = '1' and load_crt = '1' and unsigned(ioctl_addr(22 downto 14)) = 0 else '0';
+   carth <= '1' when ioctl_wr = '1' and load_crt = '1' and unsigned(ioctl_addr(22 downto 14)) = 1 else '0';
   end if;
 end process;
 
@@ -1008,15 +1012,15 @@ begin
 end process;
 
 ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
-kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
-basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
+kernal0_dout <= kernal0_dout_i when cs1 = '0' and (unsigned(romh) = 0 or kern = '1') else x"FF";
+basic_dout <= basic_dout_i when cs0 = '0' and unsigned(roml) = 0 else x"FF";
 casmatch <= '1' when c16_addr(8 downto 4) /= x"11" else '0';
 cass_dout <= "11111" & (cs_io or casmatch or (not tape_adc_act and cass_sense)) & "11";
 
-fl_dout <= ram_dout_i when cs0 = '0' and  roml = 2 else x"FF";
-fh_dout <= ram_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
-cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
-carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
+fl_dout <= ram_dout_i when cs0 = '0' and unsigned(roml) = 2 else x"FF";
+fh_dout <= ram_dout_i when cs1 = '0' and unsigned(romh) = 2 and kern = '0' else x"FF";
+cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and unsigned(roml) = 1 else x"FF";
+carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and unsigned(romh) = 1 and kern = '0' else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout
            and fl_dout and fh_dout and openbus_data;
@@ -1034,6 +1038,8 @@ openbus_data <= c16_datalatch when openbus_sel = '1' else x"ff";
 resetc16 <= system_reset(0) or not pll_locked or not flash_lock;
 xrst <= resetc16 or detach_reset;
 xreset <= resetc16 or cart_reset or detach_reset;
+joy0_sel <= joyB when system_joyswap = '1' else joyA;
+joy1_sel <= joyA when system_joyswap = '1' else joyB;
 
  c16_inst: entity work.c16 
  port map 
@@ -1064,11 +1070,11 @@ xreset <= resetc16 or cart_reset or detach_reset;
 
 	cass_mtr => cass_motor,
 	cass_in  => cass_read,
-	cass_aud => cass_read and  not cass_sense and not cass_motor,
+	cass_aud => cass_read and not cass_sense and not cass_motor,
 	cass_out => cass_write,
 
-	JOY0     => joyB when system_joyswap = '1' else joyA,
-	JOY1     => joyA when system_joyswap = '1' else joyB,
+	JOY0     => joy0_sel,
+	JOY1     => joy1_sel,
 
 	ps2_key  => "000" & usb_key,
 	key_play => open,
@@ -1125,9 +1131,9 @@ begin
   if ioctl_download ='1' and load_prg = '1' then
     state <= x"0";
     if ioctl_wr_d = '0' and ioctl_wr = '1' then
-      if ioctl_addr = 0 then 
+      if unsigned(ioctl_addr) = 0 then 
         addr(7 downto 0) <= ioctl_dout;
-      elsif ioctl_addr = 1 then 
+      elsif unsigned(ioctl_addr) = 1 then 
         addr(15 downto 8) <= ioctl_dout;
       else
         wait_cnt := 32;
@@ -1135,7 +1141,7 @@ begin
         dl_addr <= addr;
 				dl_data <= ioctl_dout;
 				dl_wr   <= '1';
-				addr    <= addr + 1;
+				addr    <= std_logic_vector(unsigned(addr) + 1);
 			end if;
     end if;
   elsif ioctl_download = '1' and (load_crt = '1' or load_function = '1') then
@@ -1153,7 +1159,7 @@ begin
   end if;
 
   if state /= x"0" then 
-       state <= state + 1; 
+       state <= std_logic_vector(unsigned(state) + 1);
   end if;
 
   case(state) is
@@ -1238,8 +1244,8 @@ dram_inst: entity work.sdram8
   refresh <= '0' when (ioctl_download and (load_prg or load_crt or load_function)) = '1' else c16_refresh;
   core_wait <= '1' when ioctl_download = '1' else '0';
 
-  sdram_rom_access <= '1' when (cs0 = '0' and (roml = 1 or roml = 2)) or
-                               (cs1 = '0' and (romh = 1 or romh = 2) and kern = '0') else '0';
+  sdram_rom_access <= '1' when (cs0 = '0' and ((unsigned(roml) = 1) or (unsigned(roml) = 2))) or
+                               (cs1 = '0' and ((unsigned(romh) = 1) or (unsigned(romh) = 2)) and kern = '0') else '0';
 
   crt_download_access <= '1' when ioctl_download = '1' and load_crt = '1' and
                                   dl_addr(15 downto 14) /= "10" and
@@ -1277,17 +1283,72 @@ dram_inst: entity work.sdram8
                   when function_download_access = '1' and dl_addr(15 downto 14) = "01" else
 
                 std_logic_vector(FUNC_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
-                  when cs1 = '0' and romh = 2 and kern = '0' else
+                  when cs1 = '0' and unsigned(romh) = 2 and kern = '0' else
                 std_logic_vector(FUNC_ADDR + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
-                  when cs0 = '0' and roml = 2 else
+                  when cs0 = '0' and unsigned(roml) = 2 else
 
                 std_logic_vector(CRT_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), CRT_ADDR'length))
-                  when cs1 = '0' and romh = 1 and kern = '0' else
+                  when cs1 = '0' and unsigned(romh) = 1 and kern = '0' else
                 std_logic_vector(CRT_ADDR + resize(unsigned(c16_addr(13 downto 0)), CRT_ADDR'length))
-                  when cs0 = '0' and roml = 1 else
+                  when cs0 = '0' and unsigned(roml) = 1 else
                 7x"00" & c16_addr;
 
   sdram_din <= dl_data when ioctl_download = '1' and (load_prg = '1' or load_crt = '1' or load_function = '1') else
                c16_dout;
+
+
+--------------- TAP -------------------
+
+tap_download <= ioctl_download and load_tap;
+tap_reset <= '1' when reset_n = '0' or tap_download = '1' or tap_last_addr = to_unsigned(0, tap_last_addr'length) or cass_finish = '1' or (cass_run = '1'and ((tap_last_addr - tap_play_addr) < to_unsigned(80, tap_last_addr'length))) else '0';
+tap_loaded <= '1' when tap_play_addr < tap_last_addr else '0';
+tap_io_cycle <= not tap_wrfull and tap_loaded;
+
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+      tap_wrreq(1 downto 0) <= tap_wrreq(1 downto 0) sll 1;
+
+      if tap_reset = '1' then
+        -- C1530 module requires one more byte at the end due to fifo early check.
+        read_cyc <= '0';
+        tap_last_addr <= ioctl_addr + 2 when tap_download = '1' else (others => '0');
+        tap_play_addr <= (others => '0');
+        tap_start <= tap_download;
+      else
+        tap_start <= '0';
+        if io_cycle = '0' and io_cycleD = '1' and tap_io_cycle = '1' then
+            read_cyc <= '1';
+        end if;
+        if io_cycle = '1' and io_cycleD = '1' and read_cyc = '1' then
+            tap_play_addr <= tap_play_addr + 1;
+            read_cyc <= '0';
+            tap_wrreq(0) <= '1';
+        end if;
+      end if;
+  end if;
+end process;
+
+c1530_inst: entity work.c1530
+port map (
+  clk32           => clk_sys,
+  restart_tape    => tap_reset,
+
+  wav_mode        => '0',
+  tap_version     => tap_version,
+
+  host_tap_in     => std_logic_vector(ram_dout_i),
+  host_tap_wrreq  => tap_wrreq,
+  tap_fifo_wrfull => tap_wrfull,
+  tap_fifo_error  => tap_finish,
+
+  cass_read       => cass_read,
+  cass_write      => cass_write,
+  cass_motor      => cass_motor,
+  cass_sense      => cass_sense,
+  cass_run        => cass_run,
+  osd_play_stop_toggle => tap_start,
+  ear_input       => '0'
+);
 
 end Behavioral_top;
