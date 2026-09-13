@@ -81,23 +81,21 @@
   <menu label="C16Nano">
  <button label="Detach Cartridge &amp; Reset" action="detach_reset_hide"/>
     <menu label="System">
-      <list label="Joyport 1:" id="Q" default="1">
- <listentry label="Retro D9" value="0"/>
- <listentry label="USB #1 Joy" value="1"/>
- <listentry label="USB #2 Joy" value="2"/>
- <listentry label="NumPad" value="3"/>
- <listentry label="DS #1 Joy" value="4"/>
- <listentry label="DS #2 Joy" value="5"/>
- <listentry label="Off" value="6"/>
+      <list label="Joyport 1:" id="Q" default="2">
+ <listentry label="Retro D9 1" value="0"/>
+ <listentry label="Retro D9 2" value="1"/>
+ <listentry label="USB Joy 1" value="2"/>
+ <listentry label="USB Joy 2" value="3"/>
+ <listentry label="NumPad" value="4"/>
+ <listentry label="Off" value="5"/>
       </list>
-      <list label="Joyport 2:" id="J" default="6">
- <listentry label="Retro D9" value="0"/>
- <listentry label="USB #1 Joy" value="1"/>
- <listentry label="USB #2 Joy" value="2"/>
- <listentry label="NumPad" value="3"/>
- <listentry label="DS #1 Joy" value="4"/>
- <listentry label="DS #2 Joy" value="5"/>
- <listentry label="Off" value="6"/>
+      <list label="Joyport 2:" id="J" default="5">
+ <listentry label="Retro D9 1" value="0"/>
+ <listentry label="Retro D9 2" value="1"/>
+ <listentry label="USB Joy 1" value="2"/>
+ <listentry label="USB Joy 2" value="3"/>
+ <listentry label="NumPad" value="4"/>
+ <listentry label="Off" value="5"/>
       </list>
       <list label="Swap Joyst:" id="M" default="0">
  <listentry label="Off" value="0"/>
@@ -132,11 +130,11 @@
     </menu>
     <menu label="Storage">
       <fileselector label="Floppy 8:" ext="d64;g64" index="0" default="disk8.d64"/>
-      <fileselector label="CRT L ROM:" ext="bin" index="1" default="C16crt.bin"/>
-      <fileselector label="PRG BASIC:" ext="prg" index="2" default="C16prg.prg"/>
-      <fileselector label="BIN KERNAL:" ext="bin" index="3" default="C16kernal.bin"/>
-      <fileselector label="TAP TAPE:" ext="tap" index="4" default="C16tape.tap"/> 
-      <fileselector label="CRT H ROM:" ext="bin" index="5" default="C16crth.bin"/>
+      <fileselector label="CRT L ROM:" ext="bin" index="1"/>
+      <fileselector label="PRG BASIC:" ext="prg" index="2"/>
+      <fileselector label="BIN KERNAL:" ext="bin" index="3"/>
+      <fileselector label="TAP TAPE:" ext="tap" index="4"/> 
+      <fileselector label="Funct ROM:" ext="bin" index="5"/>
       <list label="Disk prot.:" id="P" default="0">
 	<listentry label="None" value="0"/>
 	<listentry label="8:" value="1"/>

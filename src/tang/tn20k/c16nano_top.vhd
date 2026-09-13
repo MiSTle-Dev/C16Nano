@@ -14,12 +14,12 @@ use IEEE.numeric_std.ALL;
 entity c16nano_top is
   port
   (
-    reconfign   : out std_logic := 'Z';
     clk         : in std_logic;
     key_reset   : in std_logic; -- S2 button
     key_user    : in std_logic; -- S1 button
     leds_n      : out std_logic_vector(5 downto 0);
     io          : in std_logic_vector(4 downto 0);
+    spare       : inout std_logic_vector(5 downto 0);
     -- USB-C BL616 UART
     uart_rx     : in std_logic;
     --uart_tx     : out std_logic;
@@ -61,12 +61,6 @@ entity c16nano_top is
     O_sdram_addr : out std_logic_vector(10 downto 0); -- 11 bit multiplexed address bus
     O_sdram_ba   : out std_logic_vector(1 downto 0); -- two banks
     O_sdram_dqm  : out std_logic_vector(3 downto 0); -- 32/4
-    -- Gamepad DualShock P1
-    ds2_clk       : out std_logic;
-    ds2_mosi      : out std_logic;
-    ds2_miso      : in std_logic;
-    ds2_cs        : out std_logic;
-
     -- spi flash interface
     mspi_cs       : out std_logic;
     mspi_clk      : out std_logic;
@@ -104,10 +98,9 @@ signal iec_atn_i   : std_logic;
 signal joyUsb1      : std_logic_vector(4 downto 0);
 signal joyUsb2      : std_logic_vector(4 downto 0);
 signal joyDigital   : std_logic_vector(4 downto 0);
+signal joyDigital1  : std_logic_vector(4 downto 0);
 signal joyNumpad    : std_logic_vector(4 downto 0);
 signal numpad       : std_logic_vector(7 downto 0);
-signal joyDS2_p1    : std_logic_vector(4 downto 0);
-signal joyDS2_p2    : std_logic_vector(4 downto 0);
 -- joystick interface
 signal joyA        : std_logic_vector(4 downto 0);
 signal joyB        : std_logic_vector(4 downto 0);
@@ -332,13 +325,18 @@ signal sdram_oe        : std_logic;
 signal sdram_wr        : std_logic;
 signal sdram_addr      : std_logic_vector(22 downto 0);
 signal sdram_din       : std_logic_vector(7 downto 0);
+signal sdram_rom_access : std_logic;
 signal c16_refresh     : std_logic;
 signal core_wait       : std_logic;
 signal refresh         : std_logic;
 signal spi_intn        : std_logic;
 signal pll_locked_comb : std_logic;
+signal load_function   : std_logic := '0';
 
-constant TAP_ADDR      : std_logic_vector(22 downto 0) := 23x"200000";
+constant RAM_ADDR      : unsigned(22 downto 0) := 23x"0000000";-- System RAM: 64k
+constant CRT_ADDR      : unsigned(22 downto 0) := 23x"0200000";-- Cartridge ROM
+constant FUNC_ADDR     : unsigned(22 downto 0) := 23x"0300000";-- Function ROM
+constant TAP_ADDR      : unsigned(22 downto 0) := 23x"0400000";-- Tape buffer
 
 component rPLL
     generic (
@@ -409,14 +407,13 @@ component DL
 end component;
 
 begin
-  reconfign <= 'Z';
 
   -- BL616 console to hw pins for external USB-UART adapter
   bl616_mon_tx <= uart_rx;
 
-  process (clk_sys)
+  process (clk)
   begin
-    if rising_edge(clk_sys) then
+    if rising_edge(clk) then
       if pll_locked = '0' then
         spi_ext <= '0';
       elsif pmod_companion_ss = '0' then
@@ -433,40 +430,8 @@ begin
   pmod_companion_dout <= spi_io_dout;
   pmod_companion_intn <= spi_intn;
 
-gamepad_p1: entity work.dualshock2
-    port map (
-    clk           => clk_sys,
-    rst           => resetc16,
-    vsync         => vsync,
-    ds2_dat       => ds2_miso,
-    ds2_cmd       => ds2_mosi,
-    ds2_att       => ds2_cs,
-    ds2_clk       => ds2_clk,
-    ds2_ack       => '0',
-    analog        => '0',
-    stick_lx      => open,
-    stick_ly      => open,
-    stick_rx      => open,
-    stick_ry      => open,
-    key_up        => key_up,
-    key_down      => key_down,
-    key_left      => key_left,
-    key_right     => key_right,
-    key_l1        => key_l1,
-    key_l2        => key_l2,
-    key_r1        => key_r1,
-    key_r2        => key_r2,
-    key_triangle  => key_triangle,
-    key_square    => key_square,
-    key_circle    => key_circle,
-    key_cross     => key_cross,
-    key_start     => open,
-    key_select    => open,
-    key_lstick    => open,
-    key_rstick    => open,
-    debug1        => open,
-    debug2        => open
-    );
+-- Joystick 2 / Spare
+  spare(5 downto 0) <= (others => 'Z');
 
     led_ws2812: entity work.ws2812
     port map
@@ -587,9 +552,11 @@ sd_wr(0) <= c1541_sd_wr;
 sdc_iack <= int_ack(3);
 
 sd_card_inst: entity work.sd_card
-generic map (
-    CLK_DIV  => 1
-  )
+   generic map (
+    CLK_DIV  => 0,
+    SIMULATE => 0,
+    IMAGE_FIFO_BITS => 9
+   )
     port map (
     rstn            => pll_locked, 
     clk             => clk_sys,
@@ -611,13 +578,22 @@ generic map (
 
     -- output file/image information. Image size is e.g. used by fdc to 
     -- translate between sector/track/side and lba sector
-    image_size      => sd_img_size,           -- length of image file
+    image_size => sd_img_size, -- length of image file
     image_mounted   => sd_img_mounted,
+
+    rom_image_selection_strobe => open,
+    rom_image_selected => open,
+    rom_image_accepted => '0',
+    rom_image_data_available => open,
+    rom_image_data => open,
+    rom_image_data_strobe => '0',
 
     -- user read sector command interface (sync with clk)
     rstart          => sd_rd,
     wstart          => sd_wr, 
     rsector         => sd_lba,
+    rsrc            => open, -- source currently being process and for which 
+
     rbusy           => sd_busy,
     rdone           => sd_done,           --  done from sd reader acknowledges/clears start
 
@@ -781,9 +757,8 @@ leds_n(5 downto 0) <= not leds(5 downto 0);
 leds(5 downto 1) <= (others => '0');
 leds(0) <= led1541; -- green
 
-joyDS2_p1  <= key_square  & key_right  & key_left  & key_down  & key_up;
-joyDS2_p2  <= key_square2 & key_right2 & key_left2 & key_down2 & key_up2;
-joyDigital <= not(io(0) & io(2) & io(1) & io(4) & io(3));
+joyDigital  <= not(io(0) & io(2) & io(1) & io(4) & io(3));
+joyDigital1 <= not(spare(0) & spare(2) & spare(1) & spare(4) & spare(3));
 joyUsb1    <= joystick1(4) & joystick1(3) & joystick1(2) & joystick1(1) & joystick1(0);
 joyUsb2    <= joystick2(4) & joystick2(3) & joystick2(2) & joystick2(1) & joystick2(0);
 joyNumpad  <= numpad(4) & numpad(0) & numpad(1) & numpad(2) & numpad(3);
@@ -796,21 +771,19 @@ begin
 	if rising_edge(clk_sys) then
     case port_1_sel is
       when "0000"  => joyA <= joyDigital;
-      when "0001"  => joyA <= joyUsb1;
-      when "0010"  => joyA <= joyUsb2;
-      when "0011"  => joyA <= joyNumpad;
-      when "0100"  => joyA <= joyDS2_p1;
-      when "0101"  => joyA <= joyDS2_p2;
+      when "0001"  => joyA <= joyDigital1;
+      when "0010"  => joyA <= joyUsb1;
+      when "0011"  => joyA <= joyUsb2;
+      when "0100"  => joyA <= joyNumpad;
       when others  => joyA <= (others => '0');
       end case;
 
     case port_2_sel is
       when "0000"  => joyB <= joyDigital;
-      when "0001"  => joyB <= joyUsb1;
-      when "0010"  => joyB <= joyUsb2;
-      when "0011"  => joyB <= joyNumpad;
-      when "0100"  => joyB <= joyDS2_p1;
-      when "0101"  => joyB <= joyDS2_p2;
+      when "0001"  => joyB <= joyDigital1;
+      when "0010"  => joyB <= joyUsb1;
+      when "0011"  => joyB <= joyUsb2;
+      when "0100"  => joyB <= joyNumpad;
       when others  => joyB <= (others => '0');
       end case;
   end if;
@@ -970,56 +943,6 @@ basic_inst: entity work.Gowin_pROM_basic
         ad => c16_addr(13 downto 0)
     );
 
---funcl_inst: entity work.Gowin_pROM_funcl
---    port map (
---        dout => fl_dout_i,
---        clk => clk_sys,
---        oce => '1',
---        ce => '1',
---        reset => '0',
---        ad => c16_addr(13 downto 0)
---    );
-
---funch_inst: entity work.Gowin_pROM_funch
---    port map (
---        dout => fh_dout_i,
---        clk => clk_sys,
---        oce => '1',
---        ce => '1',
---        reset => '0',
---        ad => c16_addr(13 downto 0)
---    );
-
-Cart_low_loadable_rom: entity work.Gowin_SDPB_rom_16k
-    port map (
-        dout => cartl_dout_i,
-        clka => clk_sys,
-        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_crt = '1' else '0',
-        clkb => clk_sys,
-        ceb => '1',
-        reseta => '0',
-        resetb => '0',
-        oce => '1',
-        ada => ioctl_addr(13 downto 0),
-        din => ioctl_dout,
-        adb => c16_addr(13 downto 0)
-		);
-
---Cart_high_loadable_rom_gw5a: entity work.Gowin_SDPB_rom_16k
---    port map (
---        dout => carth_dout_i,
---        clka => clk_sys,
---        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 1 and load_crt = '1' else '0',
---        clkb => clk_sys,
---        ceb => '1',
---        reseta => '0',
---        resetb => '0',
---        oce => '1',
---        ada => ioctl_addr(13 downto 0),
---        din => ioctl_dout,
---        adb => c16_addr(13 downto 0)
---		);
-
 process(clk_sys, xrst)
 begin
   if xrst = '1' then
@@ -1053,12 +976,13 @@ basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
 casmatch <= '1' when c16_addr(8 downto 4) /= x"11" else '0';
 cass_dout <= "11111" & (cs_io or casmatch or (not tape_adc_act and cass_sense)) & "11";
 
-fl_dout <= fl_dout_i when cs0 = '0' and  roml = 2 else x"FF";
-fh_dout <= fh_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
-cartl_dout <= cartl_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
-carth_dout <= carth_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
+fl_dout <= ram_dout_i when cs0 = '0' and  roml = 2 else x"FF";
+fh_dout <= ram_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
+cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
+carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
 
-c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and openbus_data;
+c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout
+           and fl_dout and fh_dout and openbus_data;
 
 process(all)
 begin
@@ -1144,7 +1068,7 @@ begin
 
   if (system_reset(1) or detach_reset) = '1' then
     cart_reset <= '0';
-  elsif old_download /= ioctl_download and ((model and load_crt) or load_rom) = '1' then
+  elsif old_download /= ioctl_download and ((model and (load_crt or load_function)) or load_rom) = '1' then
     cart_reset <= ioctl_download;
   end if;
 
@@ -1176,6 +1100,14 @@ begin
 				dl_wr   <= '1';
 				addr    <= addr + 1;
 			end if;
+    end if;
+  elsif ioctl_download = '1' and (load_crt = '1' or load_function = '1') then
+    if ioctl_wr_d = '0' and ioctl_wr = '1' then
+      wait_cnt := 32;
+      ioctl_wait <= '1';
+      dl_addr <= ioctl_addr(15 downto 0);
+      dl_data <= ioctl_dout;
+      dl_wr <= '1';
     end if;
   end if;
 
@@ -1226,7 +1158,7 @@ crt_inst : entity work.loader_sd_card
     load_prg          => load_prg,
     load_rom          => load_rom,
     load_tap          => load_tap,
-    load_flt          => open,
+    load_flt          => load_function,
     sd_img_size       => sd_img_size(31 downto 0),
     leds              => open,
     img_select        => open,
@@ -1253,22 +1185,50 @@ dram_inst: entity work.sdram8
     sd_cas  => O_sdram_cas_n, -- columns address select
     -- cpu/chipset interface
     reset_n    => pll_locked,-- init signal after FPGA config to initialize RAM
+    ready      => open,
     clk        => clk_sys,       -- sdram is accessed at 28MHz
     refresh    => refresh,
     din        => sdram_din,      -- data input from chipset/cpu
     dout       => ram_dout_i,    -- data output to chipset/cpu
+    dout_valid => open,
     addr       => sdram_addr,
-    ds         => "00",
-    cs         => sdram_cs,
+    ce         => sdram_cs,
     we         => sdram_wr
   );
 
-  refresh <= '0' when (ioctl_download and load_prg) = '1' else c16_refresh;
-  core_wait <= '1' when (ioctl_download and load_prg) = '1' else '0';
+  refresh <= '0' when (ioctl_download and (load_prg or load_crt or load_function)) = '1' else c16_refresh;
+  core_wait <= '1' when ioctl_download = '1' else '0';
 
-  sdram_cs <= dl_wr when (ioctl_download and load_prg) = '1' else not cs_ram;
-  sdram_wr <= dl_wr when (ioctl_download and load_prg) = '1' else not c16_rnw;
-  sdram_addr <= 7x"00" & dl_addr when (ioctl_download and load_prg) = '1' else 7x"00" & c16_addr;
-  sdram_din  <= dl_data when (ioctl_download and load_prg) = '1' else c16_dout;
+  sdram_rom_access <= '1' when (cs0 = '0' and (roml = 1 or roml = 2)) or
+                               (cs1 = '0' and (romh = 1 or romh = 2) and kern = '0') else '0';
+
+  sdram_cs <= dl_wr when ioctl_download = '1' and (load_prg = '1' or load_crt = '1' or load_function = '1') else
+              sdram_rom_access when sdram_rom_access = '1' else
+              not cs_ram;
+
+  sdram_wr <= dl_wr when ioctl_download = '1' and (load_prg = '1' or load_crt = '1' or load_function = '1') else
+              not c16_rnw when sdram_rom_access = '0' else
+              '0';
+
+  sdram_addr <= 7x"00" & dl_addr 
+                  when ioctl_download = '1' and load_prg = '1' else
+                std_logic_vector(CRT_ADDR + resize(unsigned(dl_addr), CRT_ADDR'length))
+                  when ioctl_download = '1' and load_crt = '1' else
+                std_logic_vector(FUNC_ADDR + resize(unsigned(dl_addr), FUNC_ADDR'length))
+                  when ioctl_download = '1' and load_function = '1' else
+
+                std_logic_vector(FUNC_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
+                  when cs1 = '0' and romh = 2 and kern = '0' else
+                std_logic_vector(FUNC_ADDR + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
+                  when cs0 = '0' and roml = 2 else
+
+                std_logic_vector(CRT_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), CRT_ADDR'length))
+                  when cs1 = '0' and romh = 1 and kern = '0' else
+                std_logic_vector(CRT_ADDR + resize(unsigned(c16_addr(13 downto 0)), CRT_ADDR'length))
+                  when cs0 = '0' and roml = 1 else
+                7x"00" & c16_addr;
+
+  sdram_din <= dl_data when ioctl_download = '1' and (load_prg = '1' or load_crt = '1' or load_function = '1') else
+               c16_dout;
 
 end Behavioral_top;

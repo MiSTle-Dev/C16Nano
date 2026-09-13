@@ -188,7 +188,7 @@ reg boot_flt;
 
 		READING: 
 			begin
-				if(ioctl_addr <= img_size[img_select])
+				if(ioctl_addr < img_size[img_select])
 					io_state <= READ_NEXT;
 				else 
 				begin
