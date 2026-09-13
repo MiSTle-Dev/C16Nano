@@ -50,7 +50,9 @@ module sysctrl (
   output reg [1:0]  system_tv,
   output reg [1:0]  system_uart,
   output reg        system_joyswap,
-  output reg        system_detach_reset
+  output reg        system_detach_reset,
+  output reg [1:0]  system_ext_iec_en,
+  output reg [1:0]  system_int_iec_drv
 );
 
 reg [3:0] state;
@@ -117,6 +119,8 @@ always @(posedge clk) begin
       system_uart <= 2'b00;
       system_joyswap <= 1'b0;
       system_detach_reset <= 1'b0;
+      system_ext_iec_en <= 2'b00;
+      system_int_iec_drv <= 2'b00;
    end else begin // if (reset)
       //  bring button state into local clock domain
       buttonsD <= buttons;
@@ -215,6 +219,10 @@ always @(posedge clk) begin
                     if(id == "M") system_joyswap <= data_in[0];
                     // cartridge detach
                     if(id == "F") system_detach_reset <= data_in[0];
+                    //
+                    if(id == "2") system_ext_iec_en <= data_in[1:0];
+                    //
+                    if(id == "3") system_int_iec_drv <= data_in[1:0];
                 end
             end
 

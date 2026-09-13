@@ -125,16 +125,27 @@
  <listentry label="External" value="1"/>
  <listentry label="reserved" value="2"/>
       </list>
+      <list label="Internal IEC:" id="3" default="0">
+ <listentry label="8" value="0"/>
+ <listentry label="9" value="1"/>
+ <listentry label="10" value="2"/>
+ <listentry label="11" value="3"/>
+      </list>
+      <list label="External IEC:" id="2" default="0" action="c1541_reset_hide">
+ <listentry label="Off" value="0"/>
+ <listentry label="D9 #1" value="1"/>
+ <listentry label="D9 #2/spare" value="2"/>
+      </list>
  <button label="C1541 Reset" action="c1541_reset_hide"/>
  <button label="Cold Boot" action="cold_reset_hide"/>
     </menu>
     <menu label="Storage">
       <fileselector label="Floppy 8:" ext="d64;g64" index="0" default="disk8.d64"/>
-      <fileselector label="CRT L ROM:" ext="bin" index="1"/>
+      <fileselector label="CRT ROM:" ext="bin" index="1"/>
       <fileselector label="PRG BASIC:" ext="prg" index="2"/>
       <fileselector label="BIN KERNAL:" ext="bin" index="3"/>
       <fileselector label="TAP TAPE:" ext="tap" index="4"/> 
-      <fileselector label="Funct ROM:" ext="bin" index="5"/>
+      <fileselector label="Function ROM:" ext="bin" index="5"/>
       <list label="Disk prot.:" id="P" default="0">
 	<listentry label="None" value="0"/>
 	<listentry label="8:" value="1"/>

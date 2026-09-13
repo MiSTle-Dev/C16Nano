@@ -18,8 +18,9 @@ entity c16nano_top is
     key_reset   : in std_logic; -- S2 button
     key_user    : in std_logic; -- S1 button
     leds_n      : out std_logic_vector(5 downto 0);
-    io          : in std_logic_vector(4 downto 0);
+    io          : inout std_logic_vector(5 downto 0);
     spare       : inout std_logic_vector(5 downto 0);
+    ext_drive_interface : out std_logic;
     -- USB-C BL616 UART
     uart_rx     : in std_logic;
     --uart_tx     : out std_logic;
@@ -89,11 +90,15 @@ signal addr         : std_logic_vector(15 downto 0);
 
 -- IEC
 signal iec_data_o  : std_logic;
-signal iec_data_i  : std_logic;
+signal drive_iec_data_o : std_logic;
 signal iec_clk_o   : std_logic;
-signal iec_clk_i   : std_logic;
+signal drive_iec_clk_o  : std_logic;
 signal iec_atn_o   : std_logic;
 signal iec_atn_i   : std_logic;
+signal ext_iec_clk : std_logic;
+signal ext_iec_data : std_logic;
+signal drive_iec_clk : std_logic;
+signal drive_iec_data : std_logic;
   -- keyboard
 signal joyUsb1      : std_logic_vector(4 downto 0);
 signal joyUsb2      : std_logic_vector(4 downto 0);
@@ -323,6 +328,8 @@ signal casmatch        : std_logic;
 signal sdram_cs        : std_logic;
 signal sdram_oe        : std_logic;
 signal sdram_wr        : std_logic;
+signal crt_download_access : std_logic;
+signal function_download_access : std_logic;
 signal sdram_addr      : std_logic_vector(22 downto 0);
 signal sdram_din       : std_logic_vector(7 downto 0);
 signal sdram_rom_access : std_logic;
@@ -333,6 +340,8 @@ signal spi_intn        : std_logic;
 signal pll_locked_comb : std_logic;
 signal load_function   : std_logic := '0';
 signal disk_sd_wr_data : unsigned(7 downto 0);
+signal ext_iec_en       : std_logic_vector(1 downto 0);
+signal int_iec_drv      : std_logic_vector(1 downto 0);
 
 constant RAM_ADDR      : unsigned(22 downto 0) := 23x"0000000";-- System RAM: 64k
 constant CRT_ADDR      : unsigned(22 downto 0) := 23x"0200000";-- Cartridge ROM
@@ -431,8 +440,28 @@ begin
   pmod_companion_dout <= spi_io_dout;
   pmod_companion_intn <= spi_intn;
 
--- Joystick 2 / Spare
-  spare(5 downto 0) <= (others => 'Z');
+  ext_iec_clk <= '1' when ext_iec_en = "00" else
+                 io(0) when ext_iec_en = "01" else
+                 spare(0) when ext_iec_en = "10" else '0';
+
+  ext_iec_data <= '1' when ext_iec_en = "00" else
+                  io(1) when ext_iec_en = "01" else
+                  spare(1) when ext_iec_en = "10" else '0';
+
+  io(0) <= 'Z' when ext_iec_en /= "01" or (iec_clk_o = '1' and drive_iec_clk_o = '1') else '0';
+  io(1) <= 'Z' when ext_iec_en /= "01" or (iec_data_o = '1' and drive_iec_data_o = '1') else '0';
+  io(2) <= 'Z' when ext_iec_en /= "01" or (xreset = '0' and c1541_osd_reset = '0') else '0';
+  io(3) <= 'Z' when ext_iec_en /= "01" or iec_atn_o = '1' else '0';
+  io(5 downto 4) <= (others => 'Z');
+
+  spare(0) <= 'Z' when ext_iec_en /= "10" or (iec_clk_o = '1' and drive_iec_clk_o = '1') else '0';
+  spare(1) <= 'Z' when ext_iec_en /= "10" or (iec_data_o = '1' and drive_iec_data_o = '1') else '0';
+  spare(2) <= 'Z' when ext_iec_en /= "10" or (xreset = '0' and c1541_osd_reset = '0') else '0';
+  spare(3) <= 'Z' when ext_iec_en /= "10" or iec_atn_o = '1' else '0';
+  spare(5 downto 4) <= (others => 'Z');
+
+  drive_iec_clk <= drive_iec_clk_o and ext_iec_clk;
+  drive_iec_data <= drive_iec_data_o and ext_iec_data;
 
     led_ws2812: entity work.ws2812
     port map
@@ -442,14 +471,14 @@ begin
      data   => ws2812
     );
 
-process(clk_sys, disk_reset)
+process(clk_sys)
 variable reset_cnt : integer range 0 to 2147483647;
   begin
-  if disk_reset = '1' then
-    disk_chg_trg <= '0';
-    reset_cnt := 64000000;
-  elsif rising_edge(clk_sys) then
-    if reset_cnt /= 0 then
+  if rising_edge(clk_sys) then
+    if disk_reset = '1' then
+      disk_chg_trg <= '0';
+      reset_cnt := 64000000;
+    elsif reset_cnt /= 0 then
       reset_cnt := reset_cnt - 1;
     elsif reset_cnt = 0 then
       disk_chg_trg <= '1';
@@ -457,14 +486,15 @@ variable reset_cnt : integer range 0 to 2147483647;
   end if;
 end process;
 
-process(clk_sys, resetc16)
+-- delay disk start to keep loader at power-up intact
+process(clk_sys)
   variable pause_cnt : integer range 0 to 2147483647;
   begin
-  if resetc16 = '1' then
-    disk_pause <= '1';
-    pause_cnt := 34000000;
-  elsif rising_edge(clk_sys) then
-    if pause_cnt /= 0 then
+  if rising_edge(clk_sys) then
+    if resetc16 = '1' then
+      disk_pause <= '1';
+      pause_cnt := 34000000;
+    elsif pause_cnt /= 0 then
       pause_cnt := pause_cnt - 1;
     elsif pause_cnt = 0 then 
       disk_pause <= '0';
@@ -511,6 +541,7 @@ port map
     reset         => disk_reset,
     pause         => loader_busy,
     ce            => '0',
+    ds            => int_iec_drv,
 
     disk_num      => (others =>'0'),
     disk_change   => sd_change, 
@@ -519,11 +550,11 @@ port map
     disk_g64      => '0',
 
     iec_atn_i     => iec_atn_o,
-    iec_data_i    => iec_data_o,
-    iec_clk_i     => iec_clk_o,
+    iec_data_i    => iec_data_o and ext_iec_data,
+    iec_clk_i     => iec_clk_o and ext_iec_clk,
 
-    iec_data_o    => iec_data_i,
-    iec_clk_o     => iec_clk_i,
+    iec_data_o    => drive_iec_data_o,
+    iec_clk_o     => drive_iec_clk_o,
 
     par_data_i    => "11111111",
     par_stb_i     => '1',
@@ -534,6 +565,7 @@ port map
     sd_rd         => c1541_sd_rd,
     sd_wr         => c1541_sd_wr,
     sd_ack        => sd_busy,
+    sd_done       => sd_done,
 
     sd_buff_addr  => sd_byte_index,
     sd_buff_dout  => sd_rd_data,
@@ -755,14 +787,17 @@ leds_n(5 downto 0) <= not leds(5 downto 0);
 leds(5 downto 1) <= (others => '0');
 leds(0) <= led1541; -- green
 
-joyDigital  <= not(io(0) & io(2) & io(1) & io(4) & io(3));
-joyDigital1 <= not(spare(0) & spare(2) & spare(1) & spare(4) & spare(3));
+joyDigital  <= (others => '0') when ext_iec_en = "01" else
+               not(io(0) & io(2) & io(1) & io(4) & io(3));
+joyDigital1 <= (others => '0') when ext_iec_en = "10" else
+               not(spare(0) & spare(2) & spare(1) & spare(4) & spare(3));
 joyUsb1    <= joystick1(4) & joystick1(3) & joystick1(2) & joystick1(1) & joystick1(0);
 joyUsb2    <= joystick2(4) & joystick2(3) & joystick2(2) & joystick2(1) & joystick2(0);
 joyNumpad  <= numpad(4) & numpad(0) & numpad(1) & numpad(2) & numpad(3);
 
--- send external DB9 joystick port to µC
-db9_joy <= not('1' & io(0) & io(2) & io(1) & io(4) & io(3));
+-- send external DB9 joystick port to uC
+db9_joy <= (others => '0') when ext_iec_en = "01" else
+           not('1' & io(0) & io(2) & io(1) & io(4) & io(3));
 
 process(clk_sys)
 begin
@@ -871,6 +906,8 @@ hid_inst: entity work.hid
   system_uart         => system_uart,
   system_joyswap      => system_joyswap,
   system_detach_reset => detach_reset,
+  system_ext_iec_en   => ext_iec_en,
+  system_int_iec_drv  => int_iec_drv,
 
   port_status         => serial_status, -- in
   port_out_available  => serial_tx_available, --in
@@ -888,6 +925,8 @@ hid_inst: entity work.hid
   leds                => open,
   color               => ws2812_color
 );
+
+ext_drive_interface <= '1' when ext_iec_en /= "00" else '0';
 
 pll_locked_comb <= pll_locked and flash_lock;
 
@@ -1037,8 +1076,8 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	sid_type => "00",
 	sound    => audio_data_l,
 
-	IEC_DATAIN   => iec_data_i,
-	IEC_CLKIN    => iec_clk_i,
+  IEC_DATAIN   => drive_iec_data,
+  IEC_CLKIN    => drive_iec_clk,
 	IEC_ATNOUT   => iec_atn_o,
 	IEC_DATAOUT  => iec_data_o,
 	IEC_CLKOUT   => iec_clk_o,
@@ -1137,7 +1176,7 @@ crt_inst : entity work.loader_sd_card
     clk               => clk_sys,
     reset             => resetc16,
   
-    sd_lba            => loader_lba,
+    sd_lba            => sd_lba,
     sd_rd             => sd_rd,
     sd_wr             => sd_wr,
     sd_busy           => sd_busy,
@@ -1202,20 +1241,40 @@ dram_inst: entity work.sdram8
   sdram_rom_access <= '1' when (cs0 = '0' and (roml = 1 or roml = 2)) or
                                (cs1 = '0' and (romh = 1 or romh = 2) and kern = '0') else '0';
 
-  sdram_cs <= dl_wr when ioctl_download = '1' and (load_prg = '1' or load_crt = '1' or load_function = '1') else
+  crt_download_access <= '1' when ioctl_download = '1' and load_crt = '1' and
+                                  dl_addr(15 downto 14) /= "10" and
+                                  dl_addr(15 downto 14) /= "11" else '0';
+
+  function_download_access <= '1' when ioctl_download = '1' and load_function = '1' and
+                                       dl_addr(15 downto 14) /= "10" and
+                                       dl_addr(15 downto 14) /= "11" else '0';
+
+  sdram_cs <= dl_wr when ioctl_download = '1' and load_prg = '1' else
+              dl_wr when crt_download_access = '1' else
+              dl_wr when function_download_access = '1' else
               sdram_rom_access when sdram_rom_access = '1' else
               not cs_ram;
 
-  sdram_wr <= dl_wr when ioctl_download = '1' and (load_prg = '1' or load_crt = '1' or load_function = '1') else
+  sdram_wr <= dl_wr when ioctl_download = '1' and load_prg = '1' else
+              dl_wr when crt_download_access = '1' else
+              dl_wr when function_download_access = '1' else
               not c16_rnw when sdram_rom_access = '0' else
               '0';
 
   sdram_addr <= 7x"00" & dl_addr 
                   when ioctl_download = '1' and load_prg = '1' else
-                std_logic_vector(CRT_ADDR + resize(unsigned(dl_addr), CRT_ADDR'length))
-                  when ioctl_download = '1' and load_crt = '1' else
-                std_logic_vector(FUNC_ADDR + resize(unsigned(dl_addr), FUNC_ADDR'length))
-                  when ioctl_download = '1' and load_function = '1' else
+                std_logic_vector(CRT_ADDR + resize(unsigned(dl_addr(13 downto 0)), CRT_ADDR'length))
+                  when ioctl_download = '1' and load_crt = '1' and
+                       dl_addr(15 downto 14) = "00" else
+                std_logic_vector(CRT_ADDR + 16#4000# +
+                                 resize(unsigned(dl_addr(13 downto 0)), CRT_ADDR'length))
+                  when ioctl_download = '1' and load_crt = '1' and
+                       dl_addr(15 downto 14) = "01" else
+                std_logic_vector(FUNC_ADDR + resize(unsigned(dl_addr(13 downto 0)), FUNC_ADDR'length))
+                  when function_download_access = '1' and dl_addr(15 downto 14) = "00" else
+                std_logic_vector(FUNC_ADDR + 16#4000# +
+                                 resize(unsigned(dl_addr(13 downto 0)), FUNC_ADDR'length))
+                  when function_download_access = '1' and dl_addr(15 downto 14) = "01" else
 
                 std_logic_vector(FUNC_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
                   when cs1 = '0' and romh = 2 and kern = '0' else
