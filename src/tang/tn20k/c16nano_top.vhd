@@ -332,6 +332,7 @@ signal refresh         : std_logic;
 signal spi_intn        : std_logic;
 signal pll_locked_comb : std_logic;
 signal load_function   : std_logic := '0';
+signal disk_sd_wr_data : unsigned(7 downto 0);
 
 constant RAM_ADDR      : unsigned(22 downto 0) := 23x"0000000";-- System RAM: 64k
 constant CRT_ADDR      : unsigned(22 downto 0) := 23x"0200000";-- Cartridge ROM
@@ -536,7 +537,7 @@ port map
 
     sd_buff_addr  => sd_byte_index,
     sd_buff_dout  => sd_rd_data,
-    sd_buff_din   => sd_wr_data,
+    unsigned(sd_buff_din) => disk_sd_wr_data,
     sd_buff_wr    => sd_rd_byte_strobe,
 
     led           => led1541,
@@ -546,9 +547,6 @@ port map
     c1541rom_data => c1541rom_data
 );
 
-sd_lba <= loader_lba when loader_busy = '1' else disk_lba;
-sd_rd(0) <= c1541_sd_rd;
-sd_wr(0) <= c1541_sd_wr;
 sdc_iack <= int_ack(3);
 
 sd_card_inst: entity work.sd_card
@@ -1134,38 +1132,40 @@ begin
  end if;
 end process;
 
-sd_rd(7 downto 6) <= (others => '0');
-sd_wr(7 downto 6) <= (others => '0');
-
 crt_inst : entity work.loader_sd_card
   port map (
     clk               => clk_sys,
     reset             => resetc16,
   
     sd_lba            => loader_lba,
-    sd_rd             => sd_rd(5 downto 1),
-    sd_wr             => sd_wr(5 downto 1),
+    sd_rd             => sd_rd,
+    sd_wr             => sd_wr,
     sd_busy           => sd_busy,
     sd_done           => sd_done,
   
     sd_byte_index     => sd_byte_index,
     sd_rd_data        => sd_rd_data,
     sd_rd_byte_strobe => sd_rd_byte_strobe,
-  
-    sd_img_mounted    => sd_img_mounted(5 downto 0),
+    sd_wr_data        => sd_wr_data,
+
+    c1541_lba         => std_logic_vector(disk_lba),
+    c1541_sd_rd       => c1541_sd_rd,
+    c1541_sd_wr       => c1541_sd_wr,
+    c1541_sd_wr_data  => std_logic_vector(disk_sd_wr_data),
+
+    sd_img_mounted    => sd_img_mounted,
     loader_busy       => loader_busy,
     load_crt          => load_crt,
     load_prg          => load_prg,
     load_rom          => load_rom,
     load_tap          => load_tap,
     load_flt          => load_function,
+    load_reu          => open,
     sd_img_size       => sd_img_size(31 downto 0),
-    leds              => open,
-    img_select        => open,
   
     ioctl_download    => ioctl_download,
-    ioctl_addr        => ioctl_addr,
-    ioctl_data        => ioctl_dout,
+    ioctl_addr(22 downto 0) => ioctl_addr,
+    ioctl_dout        => ioctl_dout,
     ioctl_wr          => ioctl_wr,
     ioctl_wait        => ioctl_wait
   );
