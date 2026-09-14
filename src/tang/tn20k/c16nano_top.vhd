@@ -1110,70 +1110,71 @@ process(clk_sys)
   variable wait_cnt : integer;
 begin
   if rising_edge(clk_sys) then
-  ioctl_wr_d <= ioctl_wr;
-  old_download <= ioctl_download;
+    ioctl_wr_d <= ioctl_wr;
+    old_download <= ioctl_download;
 
-  if (system_reset(1) or detach_reset) = '1' then
-    cart_reset <= '0';
-  elsif old_download /= ioctl_download and ((model and (load_crt or load_function)) or load_rom) = '1' then
-    cart_reset <= ioctl_download;
-  end if;
-
-  if resetc16 = '1' then 
-    dl_wr <= '0'; 
-    wait_cnt := 0;
-    ioctl_wait <= '0';
-  end if;
-
-  if wait_cnt /= 0 then
-    wait_cnt := wait_cnt - 1;
-  elsif wait_cnt = 0 then 
-    dl_wr <= '0';
-    ioctl_wait <= '0';
-  end if;
-
-  if ioctl_download ='1' and load_prg = '1' then
-    state <= x"0";
-    if ioctl_wr_d = '0' and ioctl_wr = '1' then
-      if unsigned(ioctl_addr) = 0 then 
-        addr(7 downto 0) <= ioctl_dout;
-      elsif unsigned(ioctl_addr) = 1 then 
-        addr(15 downto 8) <= ioctl_dout;
-      else
-        wait_cnt := 32;
-        ioctl_wait <= '1';
-        dl_addr <= addr;
-				dl_data <= ioctl_dout;
-				dl_wr   <= '1';
-				addr    <= std_logic_vector(unsigned(addr) + 1);
-			end if;
+    if (system_reset(1) or detach_reset) = '1' then
+      cart_reset <= '0';
+    elsif old_download /= ioctl_download and ((model and (load_crt or load_function)) or load_rom) = '1' then
+      cart_reset <= ioctl_download;
     end if;
-    elsif ioctl_download = '1' and
-      (load_crt = '1' or load_function = '1' or load_tap = '1') then
-    if ioctl_wr_d = '0' and ioctl_wr = '1' then
-      wait_cnt := 32;
-      ioctl_wait <= '1';
-      dl_addr <= ioctl_addr(15 downto 0);
-      if load_tap = '1' then
-        tap_dl_addr <= unsigned(ioctl_addr);
-        if unsigned(ioctl_addr) = to_unsigned(16#0C#, ioctl_addr'length) then
-            tap_version <= ioctl_dout(1 downto 0);
+
+    if resetc16 = '1' then
+      dl_wr <= '0';
+      wait_cnt := 0;
+      ioctl_wait <= '0';
+    end if;
+
+    if wait_cnt /= 0 then
+      wait_cnt := wait_cnt - 1;
+    elsif wait_cnt = 0 then
+      dl_wr <= '0';
+      ioctl_wait <= '0';
+    end if;
+
+    if ioctl_download = '1' and load_prg = '1' then
+      state <= x"0";
+      if ioctl_wr_d = '0' and ioctl_wr = '1' then
+        if unsigned(ioctl_addr) = 0 then
+          addr(7 downto 0) <= ioctl_dout;
+        elsif unsigned(ioctl_addr) = 1 then
+          addr(15 downto 8) <= ioctl_dout;
+        else
+          wait_cnt := 32;
+          ioctl_wait <= '1';
+          dl_addr <= addr;
+          dl_data <= ioctl_dout;
+          dl_wr   <= '1';
+          addr    <= std_logic_vector(unsigned(addr) + 1);
         end if;
       end if;
-      dl_data <= ioctl_dout;
-      dl_wr <= '1';
+    elsif ioctl_download = '1' and (load_crt = '1' or load_function = '1' or load_tap = '1') then
+      if ioctl_wr_d = '0' and ioctl_wr = '1' then
+        wait_cnt := 32;
+        ioctl_wait <= '1';
+        dl_addr <= ioctl_addr(15 downto 0);
+        if load_tap = '1' then
+          tap_dl_addr <= unsigned(ioctl_addr);
+
+          if unsigned(ioctl_addr) = to_unsigned(16#0C#, ioctl_addr'length) then
+              tap_version <= ioctl_dout(1 downto 0);
+          end if;
+
+        end if;
+        dl_data <= ioctl_dout;
+        dl_wr <= '1';
+      end if;
     end if;
-  end if;
 
-  if old_download = '1' and ioctl_download = '0' and load_prg = '1' then
+    if old_download = '1' and ioctl_download = '0' and load_prg = '1' then
       state <= x"1"; 
-  end if;
+    end if;
 
-  if state /= x"0" then 
-       state <= std_logic_vector(unsigned(state) + 1);
-  end if;
+    if state /= x"0" then
+      state <= std_logic_vector(unsigned(state) + 1);
+    end if;
 
-  case(state) is
+    case(state) is
       when x"1" => dl_addr <= x"002d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
       when x"3" => dl_addr <= x"002e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
       when x"5" => dl_addr <= x"002f"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
@@ -1183,9 +1184,9 @@ begin
       when x"D" => dl_addr <= x"009d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
       when x"F" => dl_addr <= x"009e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
       when others =>
-  end case;
+      end case;
 
- end if;
+      end if;
 end process;
 
 crt_inst : entity work.loader_sd_card
@@ -1337,7 +1338,7 @@ begin
       tap_download_d <= tap_download;
 
       if tap_reset = '1' then
-        if (ioctl_download = '1') and (load_tap = '1') then
+        if ioctl_download = '1' and load_tap = '1' then
             tap_last_addr <= TAP_ADDR + unsigned(ioctl_addr) + 2;
         else
             tap_last_addr <= (others => '0');
