@@ -298,17 +298,17 @@ signal serial_tx_data   : std_logic_vector(7 downto 0);
 signal serial_rx_available : std_logic_vector(7 downto 0);
 signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
-signal tap_play_addr   : std_logic_vector(22 downto 0);
-signal tap_last_addr   : std_logic_vector(22 downto 0);
+signal tap_play_addr   : unsigned(22 downto 0);
+signal tap_last_addr   : unsigned(22 downto 0);
 signal tap_version     : std_logic_vector(1 downto 0);
 signal tap_data        : std_logic_vector(7 downto 0);
 signal tap_data_in     : std_logic_vector(7 downto 0);
+signal tap_dl_addr     : unsigned(22 downto 0);
 signal cass_write      : std_logic;
 signal cass_motor      : std_logic;
 signal cass_sense      : std_logic;
 signal cass_read       : std_logic;
 signal cass_run        : std_logic;
-signal cass_finish     : std_logic;
 signal cass_snd        : std_logic;
 signal tap_download    : std_logic;
 signal tap_reset       : std_logic;
@@ -319,12 +319,15 @@ signal tap_wrfull      : std_logic;
 signal tap_autoplay    : std_logic;
 signal tap_sdram_oe    : std_logic := '0';
 signal tap_wr          : std_logic := '0';
+signal tap_start       : std_logic;
+signal tap_finish      : std_logic;
 signal cass_aud        : std_logic;
 signal ioctl_wr_d      : std_logic;
 signal ioctl_wait      : std_logic := '0';
 signal tap_rd          : std_logic; 
-signal tap_data_ready  : std_logic := '1';
-signal tap_cycle       : std_logic;
+signal tap_data_ready  : std_logic;
+signal tap_cycle       : std_logic := '0';
+signal tap_download_d  : std_logic := '0';
 signal tape_adc_act    : std_logic;
 signal casmatch        : std_logic;
 signal sdram_cs        : std_logic;
@@ -342,8 +345,8 @@ signal spi_intn        : std_logic;
 signal pll_locked_comb : std_logic;
 signal load_function   : std_logic := '0';
 signal disk_sd_wr_data : unsigned(7 downto 0);
-signal ext_iec_en       : std_logic_vector(1 downto 0);
-signal int_iec_drv      : std_logic_vector(1 downto 0);
+signal ext_iec_en      : std_logic_vector(1 downto 0);
+signal int_iec_drv     : std_logic_vector(1 downto 0);
 
 constant RAM_ADDR      : unsigned(22 downto 0) := 23x"0000000";-- System RAM: 64k
 constant CRT_ADDR      : unsigned(22 downto 0) := 23x"0200000";-- Cartridge ROM
@@ -1014,7 +1017,7 @@ end process;
 ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
 kernal0_dout <= kernal0_dout_i when cs1 = '0' and (unsigned(romh) = 0 or kern = '1') else x"FF";
 basic_dout <= basic_dout_i when cs0 = '0' and unsigned(roml) = 0 else x"FF";
-casmatch <= '1' when c16_addr(8 downto 4) /= x"11" else '0';
+casmatch <= '1' when c16_addr(8 downto 4) /= 5x"11" else '0';
 cass_dout <= "11111" & (cs_io or casmatch or (not tape_adc_act and cass_sense)) & "11";
 
 fl_dout <= ram_dout_i when cs0 = '0' and unsigned(roml) = 2 else x"FF";
@@ -1144,11 +1147,18 @@ begin
 				addr    <= std_logic_vector(unsigned(addr) + 1);
 			end if;
     end if;
-  elsif ioctl_download = '1' and (load_crt = '1' or load_function = '1') then
+    elsif ioctl_download = '1' and
+      (load_crt = '1' or load_function = '1' or load_tap = '1') then
     if ioctl_wr_d = '0' and ioctl_wr = '1' then
       wait_cnt := 32;
       ioctl_wait <= '1';
       dl_addr <= ioctl_addr(15 downto 0);
+      if load_tap = '1' then
+        tap_dl_addr <= unsigned(ioctl_addr);
+        if unsigned(ioctl_addr) = to_unsigned(16#0C#, ioctl_addr'length) then
+            tap_version <= ioctl_dout(1 downto 0);
+        end if;
+      end if;
       dl_data <= ioctl_dout;
       dl_wr <= '1';
     end if;
@@ -1235,14 +1245,14 @@ dram_inst: entity work.sdram8
     refresh    => refresh,
     din        => sdram_din,      -- data input from chipset/cpu
     dout       => ram_dout_i,    -- data output to chipset/cpu
-    dout_valid => open,
+    dout_valid => tap_data_ready,
     addr       => sdram_addr,
     ce         => sdram_cs,
     we         => sdram_wr
   );
 
-  refresh <= '0' when (ioctl_download and (load_prg or load_crt or load_function)) = '1' else c16_refresh;
-  core_wait <= '1' when ioctl_download = '1' else '0';
+  refresh <= '0' when (ioctl_download and (load_prg or load_crt or load_function or load_tap)) = '1' else c16_refresh;
+  core_wait <= '1' when ioctl_download = '1' or tap_cycle = '1' else '0';
 
   sdram_rom_access <= '1' when (cs0 = '0' and ((unsigned(roml) = 1) or (unsigned(roml) = 2))) or
                                (cs1 = '0' and ((unsigned(romh) = 1) or (unsigned(romh) = 2)) and kern = '0') else '0';
@@ -1258,16 +1268,24 @@ dram_inst: entity work.sdram8
   sdram_cs <= dl_wr when ioctl_download = '1' and load_prg = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
+              dl_wr when ioctl_download = '1' and load_tap = '1' else
+              tap_rd when tap_rd = '1' else
               sdram_rom_access when sdram_rom_access = '1' else
               not cs_ram;
 
   sdram_wr <= dl_wr when ioctl_download = '1' and load_prg = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
+              dl_wr when ioctl_download = '1' and load_tap = '1' else
+              '0' when tap_rd = '1' else
               not c16_rnw when sdram_rom_access = '0' else
               '0';
 
-  sdram_addr <= 7x"00" & dl_addr 
+  sdram_addr <= std_logic_vector(tap_play_addr)
+                  when tap_rd = '1' else
+                std_logic_vector(TAP_ADDR + tap_dl_addr)
+                  when ioctl_download = '1' and load_tap = '1' else
+                7x"00" & dl_addr
                   when ioctl_download = '1' and load_prg = '1' else
                 std_logic_vector(CRT_ADDR + resize(unsigned(dl_addr(13 downto 0)), CRT_ADDR'length))
                   when ioctl_download = '1' and load_crt = '1' and
@@ -1293,37 +1311,52 @@ dram_inst: entity work.sdram8
                   when cs0 = '0' and unsigned(roml) = 1 else
                 7x"00" & c16_addr;
 
-  sdram_din <= dl_data when ioctl_download = '1' and (load_prg = '1' or load_crt = '1' or load_function = '1') else
+  sdram_din <= dl_data when ioctl_download = '1' and
+                        (load_prg = '1' or load_crt = '1' or
+                         load_function = '1' or load_tap = '1') else
                c16_dout;
-
 
 --------------- TAP -------------------
 
 tap_download <= ioctl_download and load_tap;
-tap_reset <= '1' when reset_n = '0' or tap_download = '1' or tap_last_addr = to_unsigned(0, tap_last_addr'length) or cass_finish = '1' or (cass_run = '1'and ((tap_last_addr - tap_play_addr) < to_unsigned(80, tap_last_addr'length))) else '0';
+tap_reset <= '1' when resetc16 = '1' or
+                      tap_download = '1' or
+                      tap_finish = '1' or
+                      (cass_run = '1'and ((tap_last_addr - tap_play_addr) < to_unsigned(80, tap_last_addr'length)))
+                      else '0';
 tap_loaded <= '1' when tap_play_addr < tap_last_addr else '0';
-tap_io_cycle <= not tap_wrfull and tap_loaded;
 
 process(clk_sys)
 begin
   if rising_edge(clk_sys) then
-      tap_wrreq(1 downto 0) <= tap_wrreq(1 downto 0) sll 1;
-
       if tap_reset = '1' then
-        -- C1530 module requires one more byte at the end due to fifo early check.
-        read_cyc <= '0';
-        tap_last_addr <= ioctl_addr + 2 when tap_download = '1' else (others => '0');
-        tap_play_addr <= (others => '0');
+        if (ioctl_download = '1') and (load_tap = '1') then
+            tap_last_addr <= TAP_ADDR + unsigned(ioctl_addr) + 2;
+        else
+            tap_last_addr <= (others => '0');
+        end if;
+        tap_play_addr <= TAP_ADDR;
+        tap_rd <= '0';
+        tap_wrreq <= '0';
+        tap_cycle <= '0';
         tap_start <= tap_download;
       else
+        -- C1530 requires one additional byte because its FIFO checks early.
+        tap_rd <= '0';
+        tap_wrreq <= '0';
         tap_start <= '0';
-        if io_cycle = '0' and io_cycleD = '1' and tap_io_cycle = '1' then
-            read_cyc <= '1';
-        end if;
-        if io_cycle = '1' and io_cycleD = '1' and read_cyc = '1' then
+
+        if tap_rd = '0' and tap_wrreq = '0' then
+          if tap_cycle = '1' then
             tap_play_addr <= tap_play_addr + 1;
-            read_cyc <= '0';
-            tap_wrreq(0) <= '1';
+            tap_cycle <= '0';
+            tap_wrreq <= '1';
+          else 
+            if tap_wrfull = '0' and tap_loaded = '1' then
+              tap_rd <= '1';
+              tap_cycle <= '1';
+            end if;
+          end if;
         end if;
       end if;
   end if;
@@ -1337,7 +1370,7 @@ port map (
   wav_mode        => '0',
   tap_version     => tap_version,
 
-  host_tap_in     => std_logic_vector(ram_dout_i),
+  host_tap_in     => ram_dout_i,
   host_tap_wrreq  => tap_wrreq,
   tap_fifo_wrfull => tap_wrfull,
   tap_fifo_error  => tap_finish,
