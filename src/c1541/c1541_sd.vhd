@@ -22,7 +22,6 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_unsigned.all;
 use ieee.numeric_std.all;
 
 entity c1541_sd is
@@ -32,7 +31,7 @@ port(
 	reset : in std_logic;
     pause : in std_logic;
     ce    : in std_logic;
-
+	ds    : in std_logic_vector(1 downto 0) := "00";
 	
 	disk_num : in std_logic_vector(9 downto 0);
 	disk_change : in std_logic;
@@ -51,6 +50,7 @@ port(
 	sd_rd          : out std_logic;
 	sd_wr          : out std_logic;
 	sd_ack         : in  std_logic;
+	sd_done        : in  std_logic;
 
 	sd_buff_addr   : in  std_logic_vector(8 downto 0);
 	sd_buff_dout   : in  std_logic_vector(7 downto 0);
@@ -83,49 +83,36 @@ signal c1541_logic_din   : std_logic_vector(7 downto 0); -- data read
 signal c1541_logic_dout  : std_logic_vector(7 downto 0); -- data to write
 signal mode   : std_logic;                    -- read/write
 signal mode_r : std_logic;                    -- read/write
-signal stp    : std_logic_vector(1 downto 0); -- stepper motor control
-signal stp_r  : std_logic_vector(1 downto 0); -- stepper motor control
+signal stp    : unsigned(1 downto 0);         -- stepper motor control
+signal stp_r  : unsigned(1 downto 0);         -- stepper motor control
 signal mtr    : std_logic ;                   -- stepper motor on/off
-signal freq   : std_logic_vector(1 downto 0); -- motor (gcr_bit) frequency
+signal freq   : unsigned(1 downto 0);         -- motor (gcr_bit) frequency
 signal sync_n : std_logic;                    -- reading SYNC bytes
 signal byte_n : std_logic;                    -- byte ready
 signal act    : std_logic;                    -- activity LED
 signal act_r  : std_logic;                    -- activity LED
 
-signal track_num_dbl     : std_logic_vector(6 downto 0);
-signal new_track_num_dbl : std_logic_vector(6 downto 0);
+signal track_num_dbl     : unsigned(6 downto 0);
+signal new_track_num_dbl : unsigned(6 downto 0);
 signal sd_busy           : std_logic;
 
 signal save_track      : std_logic;
 signal track_modified   : std_logic;
-signal save_track_stage : std_logic_vector(3 downto 0);
-signal id1 : std_logic_vector(7 downto 0);
-signal id2 : std_logic_vector(7 downto 0);
-signal disk_freq : std_logic_vector(1 downto 0);
+signal save_track_stage : unsigned(3 downto 0);
+signal id1 : unsigned(7 downto 0);
+signal id2 : unsigned(7 downto 0);
+signal disk_freq : unsigned(1 downto 0);
 signal raw_disk : std_logic;
-signal raw_track_len : std_logic_vector(15 downto 0);
-signal max_track : std_logic_vector(6 downto 0);
+signal raw_track_len : unsigned(15 downto 0);
+signal max_track : unsigned(6 downto 0);
 signal wps_flag : std_logic;
 signal change_timer : integer;
 signal mounted : std_logic := '0';
-signal disk_mountD2, disk_mountD : std_logic;
-signal disk_changeD2, disk_changeD : std_logic;
 signal tr00_sense_n : std_logic;
-signal iec_data_d: std_logic;
-signal iec_clk_d : std_logic;
-signal iec_atn, iec_data, iec_clk, reset_drv : std_logic;
 
 begin
-
-sync_inst1 : entity work.iecdrv_sync port map(clk32, iec_atn_i,  iec_atn);
-sync_inst2 : entity work.iecdrv_sync port map(clk32, iec_data_i, iec_data);
-sync_inst3 : entity work.iecdrv_sync port map(clk32, iec_clk_i,  iec_clk);
-sync_inst4 : entity work.iecdrv_sync port map(clk32, reset,  reset_drv);
-
-iec_clk_o  <= iec_clk_d  or reset_drv;
-iec_data_o <= iec_data_d or reset_drv;
-
-tr00_sense_n <='0' when new_track_num_dbl = 7x"00" else '1';
+	
+tr00_sense_n <='0' when new_track_num_dbl = to_unsigned(0, new_track_num_dbl'length) else '1';
 
   c1541 : entity work.c1541_logic
   generic map
@@ -135,17 +122,17 @@ tr00_sense_n <='0' when new_track_num_dbl = 7x"00" else '1';
   port map
   (
     clk_32M => clk32,
-    reset => reset_drv,
+    reset => reset,
     pause => pause,
     ce    => ce,
 
     -- serial bus
-    sb_data_oe => iec_data_d,
-    sb_clk_oe  => iec_clk_d,
+    sb_data_oe => iec_data_o,
+    sb_clk_oe  => iec_clk_o,
 		
-    sb_data_in => iec_data and iec_data_o,
-    sb_clk_in => iec_clk and iec_clk_o,
-    sb_atn_in => iec_atn,
+    sb_data_in => iec_data_i,
+    sb_clk_in  => iec_clk_i,
+    sb_atn_in  => iec_atn_i,
     -- parallel bus
     par_data_i => par_data_i,
     par_stb_i  => par_stb_i,
@@ -153,13 +140,13 @@ tr00_sense_n <='0' when new_track_num_dbl = 7x"00" else '1';
     par_stb_o  => par_stb_o,
 
 	-- drive-side interface
-    ds              => "00",     -- device select
+    ds              => ds,        -- device select
     di              => c1541_logic_din,  -- data read 
     do              => c1541_logic_dout, -- data to write
     mode            => mode,     -- read/write
-    stp             => stp,      -- stepper motor control
+    std_logic_vector(stp) => stp,      -- stepper motor control
     mtr             => mtr,      -- motor on/off
-    freq            => freq,     -- motor frequency
+    std_logic_vector(freq) => freq,     -- motor frequency
     sync_n          => sync_n,   -- reading SYNC bytes
     byte_n          => byte_n,   -- byte ready
     wps_n           => not wps_flag,      -- write-protect sense (0 = protected)
@@ -207,7 +194,7 @@ sd: entity work.mist_sd_card
 port map
 (
 	clk           => clk32,
-	reset         => reset_drv,
+	reset         => reset,
 
 	ram_addr      => floppy_ram_addr,
 	ram_di        => floppy_ram_di,
@@ -236,29 +223,45 @@ port map
 	sd_lba        => sd_lba,
 	sd_rd         => sd_rd,
 	sd_wr         => sd_wr,
-	sd_ack        => sd_ack
+	sd_ack        => sd_ack,
+	sd_done       => sd_done
 );
 
--- synchronize disk change and mount signals
-process (clk32)
- begin
- if rising_edge(clk32) then
-  disk_mountD  <= disk_mount;
-  disk_mountD2 <= disk_mountD;
-  disk_changeD <= disk_change;
-  disk_changeD2 <= disk_changeD;
- end if;
-end process;
+--sd_spi : entity work.spi_controller
+--port map
+--(
+--	cs_n => sd_cs_n,  --: out std_logic; -- MMC chip select
+--	mosi => sd_mosi,  --: out std_logic; -- Data to card (master out slave in)
+--	miso => sd_miso,  --: in  std_logic; -- Data from card (master in slave out)
+--	sclk => sd_sclk,  --: out std_logic; -- Card clock
+--	bus_available => bus_available,
+--
+--	ram_addr => spi_ram_addr, -- out unsigned(13 downto 0);
+--	ram_di   => spi_ram_di,   -- out unsigned(7 downto 0);
+--	ram_do   => ram_do,       -- in  unsigned(7 downto 0);
+--	ram_we   => spi_ram_we,
+--		
+--	track_num     => new_track_num_dbl(6 downto 1),
+--	disk_num      => disk_num,
+--	busy          => sd_busy,
+--	save_track    => save_track,
+--	sector_offset => sector_offset,
+--
+--	clk => clk_spi_ctrlr,
+--	reset => reset,
+--
+--	dbg_state => dbg_sd_state
+--);
 
 wps_flag <= disk_readonly when change_timer = 0 else not disk_readonly;
 
-process (clk32, reset_drv)
+process (clk32)
 begin
-	if reset_drv = '1' then
-		change_timer <= 0;
-	elsif rising_edge(clk32) then
-		if disk_changeD2 = '1' then
-			mounted <= disk_mountD2;
+	if rising_edge(clk32) then
+		if reset = '1' then
+			change_timer <= 0;
+		elsif disk_change = '1' then
+			mounted <= disk_mount;
 			change_timer <= 1000000;
 		elsif change_timer /= 0 then
 			change_timer <= change_timer - 1;
@@ -272,40 +275,41 @@ begin
 		stp_r <= stp;
 		act_r <= act;
 		mode_r <= mode;
-		if reset_drv = '1' then
-			track_num_dbl <= "0100100";--"0000010";
+		if reset = '1' then
+			track_num_dbl <= to_unsigned(16#24#, track_num_dbl'length);--"0000010";
 			track_modified <= '0';
-			save_track_stage <= X"0";
+			save_track <= '0';
+			save_track_stage <= to_unsigned(0, save_track_stage'length);
 		else
 			if mtr = '1' then
-				if(  (stp_r = "00" and stp = "10")
-					or (stp_r = "10" and stp = "01")
-					or (stp_r = "01" and stp = "11")
-					or (stp_r = "11" and stp = "00")) then
+				if(  (stp_r = to_unsigned(0, stp_r'length) and stp = to_unsigned(2, stp'length))
+					or (stp_r = to_unsigned(2, stp_r'length) and stp = to_unsigned(1, stp'length))
+					or (stp_r = to_unsigned(1, stp_r'length) and stp = to_unsigned(3, stp'length))
+					or (stp_r = to_unsigned(3, stp_r'length) and stp = to_unsigned(0, stp'length))) then
 						if track_num_dbl < max_track then
-							track_num_dbl <= track_num_dbl + '1';
+							track_num_dbl <= track_num_dbl + 1;
 							if track_modified = '1' then
-								if save_track_stage = X"0" then
-									save_track_stage <= X"1";
+								if save_track_stage = to_unsigned(0, save_track_stage'length) then
+									save_track_stage <= to_unsigned(1, save_track_stage'length);
 								end if;	
 							else
-								new_track_num_dbl <= track_num_dbl + '1';
+								new_track_num_dbl <= track_num_dbl + 1;
 							end if;	
 						end if;
 				end if;
 				
-				if(  (stp_r = "00" and stp = "11")
-					or (stp_r = "10" and stp = "00")
-					or (stp_r = "01" and stp = "10")
-					or (stp_r = "11" and stp = "01")) then 
-						if track_num_dbl > "0000010" then
-							track_num_dbl <= track_num_dbl - '1';
+				if(  (stp_r = to_unsigned(0, stp_r'length) and stp = to_unsigned(3, stp'length))
+					or (stp_r = to_unsigned(2, stp_r'length) and stp = to_unsigned(0, stp'length))
+					or (stp_r = to_unsigned(1, stp_r'length) and stp = to_unsigned(2, stp'length))
+					or (stp_r = to_unsigned(3, stp_r'length) and stp = to_unsigned(1, stp'length))) then 
+						if track_num_dbl > to_unsigned(2, track_num_dbl'length) then
+							track_num_dbl <= track_num_dbl - 1;
 							if track_modified = '1' then
-								if save_track_stage = X"0" then
-									save_track_stage <= X"1";
+								if save_track_stage = to_unsigned(0, save_track_stage'length) then
+									save_track_stage <= to_unsigned(1, save_track_stage'length);
 								end if;	
 							else
-								new_track_num_dbl <= track_num_dbl - '1';
+								new_track_num_dbl <= track_num_dbl - 1;
 							end if;	
 						end if;
 				end if;
@@ -316,34 +320,34 @@ begin
 			end if;		
 			
 			if act = '0' and act_r = '1' then -- stopping activity
-				if track_modified = '1' and save_track_stage = X"0" then
-					save_track_stage <= X"1";
+				if track_modified = '1' and save_track_stage = to_unsigned(0, save_track_stage'length) then
+					save_track_stage <= to_unsigned(1, save_track_stage'length);
 				end if;	
 			end if;
 				
 			-- save track state machine
 			case save_track_stage is
-			when X"0" => 
+			when x"0" => 
 				new_track_num_dbl <= track_num_dbl;
-			when X"1" =>
+			when x"1" =>
 				save_track <= '1';
 				if sd_busy = '1' then
-					save_track_stage <= X"2";
+					save_track_stage <= to_unsigned(2, save_track_stage'length);
 				end if;
-			when X"2" =>
-					save_track_stage <= X"3";
-			when X"3" =>
-					save_track_stage <= X"4";
-			when X"4" =>
+			when x"2" =>
+					save_track_stage <= to_unsigned(3, save_track_stage'length);
+			when x"3" =>
+					save_track_stage <= to_unsigned(4, save_track_stage'length);
+			when x"4" =>
 				save_track <= '0'; -- must released save_track for spi_controler				
 				if sd_busy = '0' then 
-					save_track_stage <= X"5";
+					save_track_stage <= to_unsigned(5, save_track_stage'length);
 				end if;
-			when X"5" =>
+			when x"5" =>
 				track_modified <= '0';
-				save_track_stage <= X"0";	
+				save_track_stage <= to_unsigned(0, save_track_stage'length);	
 			when others => 
-				save_track_stage <= X"0";						
+				save_track_stage <= to_unsigned(0, save_track_stage'length);						
 			end case;
 			
 		end if; -- reset
