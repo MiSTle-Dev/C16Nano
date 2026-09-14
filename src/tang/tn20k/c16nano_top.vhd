@@ -1027,7 +1027,7 @@ cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and unsigned(roml) = 1 e
 carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and unsigned(romh) = 1 and kern = '0' else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout
-           and fl_dout and fh_dout and openbus_data;
+           and fl_dout and fh_dout and cass_dout and openbus_data;
 
 process(all)
 begin
@@ -1271,7 +1271,8 @@ dram_inst: entity work.sdram8
   sdram_cs <= dl_wr when ioctl_download = '1' and load_prg = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
-              dl_wr when ioctl_download = '1' and load_tap = '1' else
+              tap_wr when tap_wr = '1' else
+              '0' when ioctl_download = '1' else
               tap_rd when tap_rd = '1' else
               sdram_rom_access when sdram_rom_access = '1' else
               not cs_ram;
@@ -1279,8 +1280,9 @@ dram_inst: entity work.sdram8
   sdram_wr <= dl_wr when ioctl_download = '1' and load_prg = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
-              dl_wr when ioctl_download = '1' and load_tap = '1' else
-            '0' when tap_rd = '1' else
+              tap_wr when tap_wr = '1' else
+              '0' when ioctl_download = '1' else
+              '0' when tap_rd = '1' else
               not c16_rnw when sdram_rom_access = '0' else
               '0';
 
