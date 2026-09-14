@@ -644,6 +644,7 @@ audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
 cass_aud <= cass_read and not cass_sense and not cass_motor;
 audio_l <= (audio_data_l & "00") or (4x"00" & cass_aud & 13x"00000");
 audio_r <= audio_l;
+tape_adc_act <= '0';
 
 video_inst: entity work.video
 generic map
@@ -1073,7 +1074,7 @@ joy1_sel <= joyA when system_joyswap = '1' else joyB;
 
 	cass_mtr => cass_motor,
 	cass_in  => cass_read,
-	cass_aud => cass_read and not cass_sense and not cass_motor,
+  cass_aud => cass_aud,
 	cass_out => cass_write,
 
 	JOY0     => joy0_sel,
@@ -1265,6 +1266,8 @@ dram_inst: entity work.sdram8
                                        dl_addr(15 downto 14) /= "10" and
                                        dl_addr(15 downto 14) /= "11" else '0';
 
+  tap_wr <= dl_wr and ioctl_download and load_tap;
+
   sdram_cs <= dl_wr when ioctl_download = '1' and load_prg = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
@@ -1277,14 +1280,14 @@ dram_inst: entity work.sdram8
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
               dl_wr when ioctl_download = '1' and load_tap = '1' else
-              '0' when tap_rd = '1' else
+            '0' when tap_rd = '1' else
               not c16_rnw when sdram_rom_access = '0' else
               '0';
 
   sdram_addr <= std_logic_vector(tap_play_addr)
                   when tap_rd = '1' else
                 std_logic_vector(TAP_ADDR + tap_dl_addr)
-                  when ioctl_download = '1' and load_tap = '1' else
+                  when tap_wr = '1' else
                 7x"00" & dl_addr
                   when ioctl_download = '1' and load_prg = '1' else
                 std_logic_vector(CRT_ADDR + resize(unsigned(dl_addr(13 downto 0)), CRT_ADDR'length))
@@ -1329,6 +1332,8 @@ tap_loaded <= '1' when tap_play_addr < tap_last_addr else '0';
 process(clk_sys)
 begin
   if rising_edge(clk_sys) then
+      tap_download_d <= tap_download;
+
       if tap_reset = '1' then
         if (ioctl_download = '1') and (load_tap = '1') then
             tap_last_addr <= TAP_ADDR + unsigned(ioctl_addr) + 2;
@@ -1339,18 +1344,20 @@ begin
         tap_rd <= '0';
         tap_wrreq <= '0';
         tap_cycle <= '0';
-        tap_start <= tap_download;
+        tap_start <= '0';
       else
         -- C1530 requires one additional byte because its FIFO checks early.
         tap_rd <= '0';
         tap_wrreq <= '0';
-        tap_start <= '0';
+        tap_start <= tap_download_d and not tap_download;
 
         if tap_rd = '0' and tap_wrreq = '0' then
           if tap_cycle = '1' then
-            tap_play_addr <= tap_play_addr + 1;
-            tap_cycle <= '0';
-            tap_wrreq <= '1';
+            if tap_data_ready = '1' then
+              tap_play_addr <= tap_play_addr + 1;
+              tap_cycle <= '0';
+              tap_wrreq <= '1';
+            end if;
           else 
             if tap_wrfull = '0' and tap_loaded = '1' then
               tap_rd <= '1';

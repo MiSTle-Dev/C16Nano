@@ -218,7 +218,7 @@ always_ff @(posedge clk) begin
 				io_state <= READING;
 
 		READING: begin
-				if(addr <= img_size[img_select])
+				if(addr < img_size[img_select])
 					io_state <= READ_NEXT;
 				else 
 				begin
