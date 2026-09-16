@@ -267,6 +267,7 @@ signal openbus_data     : std_logic_vector(7 downto 0);
 signal c16_datalatch    : std_logic_vector(7 downto 0);
 signal openbus_sel      : std_logic;
 signal dl_addr          : std_logic_vector(15 downto 0);
+signal tap_dl_addr      : std_logic_vector(22 downto 0);
 signal dl_data          : std_logic_vector(7 downto 0);
 signal kern             : std_logic;
 signal model            : std_logic;
@@ -1147,6 +1148,7 @@ begin
         wait_cnt := 32;
         ioctl_wait <= '1';
         dl_addr <= ioctl_addr(15 downto 0);
+        tap_dl_addr <= ioctl_addr;
         if ioctl_addr(7 downto 0) = x"0C" then
             tap_version <= ioctl_dout(1 downto 0);
         end if;
@@ -1278,7 +1280,7 @@ dram_inst: entity work.sdram8
 
   sdram_addr <= tap_play_addr
                   when tap_rd = '1' else
-                std_logic_vector(TAP_ADDR + resize(unsigned(dl_addr(15 downto 0)), TAP_ADDR'length))
+                std_logic_vector(TAP_ADDR + unsigned(tap_dl_addr))
                   when tap_wr = '1' else
 
                 7x"00" & dl_addr
@@ -1318,6 +1320,7 @@ tap_download <= ioctl_download and load_tap;
 tap_reset <= '1' when resetc16 = '1' or
                       tap_download = '1' or
                       tap_finish = '1' or
+                      detach_reset = '1' or
                       (cass_run = '1' and ((unsigned(tap_last_addr) - unsigned(tap_play_addr)) < 80))
                       else '0';
 tap_loaded <= '1' when tap_play_addr < tap_last_addr else '0';
@@ -1342,6 +1345,7 @@ begin
         end if;
         tap_play_addr <= std_logic_vector(TAP_ADDR);
         tap_cycle <= '0';
+        tap_wrreq <= '0';
         tap_autoplay <= tap_download;
       else
         tap_wrreq <= '0';
