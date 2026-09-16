@@ -1149,7 +1149,7 @@ begin
         ioctl_wait <= '1';
         dl_addr <= ioctl_addr(15 downto 0);
         tap_dl_addr <= ioctl_addr;
-        if ioctl_addr(7 downto 0) = x"0C" then
+        if load_tap = '1' and unsigned(ioctl_addr) = 12 then
             tap_version <= ioctl_dout(1 downto 0);
         end if;
         dl_data <= ioctl_dout;
