@@ -1278,7 +1278,7 @@ dram_inst: entity work.sdram8
               not c16_rnw when sdram_rom_access = '0' else
               '0';
 
-  sdram_addr <= tap_play_addr
+  sdram_addr <= std_logic_vector(TAP_ADDR + unsigned(tap_play_addr))
                   when tap_rd = '1' else
                 std_logic_vector(TAP_ADDR + unsigned(tap_dl_addr))
                   when tap_wr = '1' else
@@ -1337,13 +1337,11 @@ begin
 
       if tap_reset = '1' then
         if tap_download = '1' then
-            tap_last_addr <= std_logic_vector(
-                   TAP_ADDR + unsigned(ioctl_addr) +
-                   to_unsigned(2, TAP_ADDR'length));
+            tap_last_addr <= ioctl_addr + 2;
         else
             tap_last_addr <= (others => '0');
         end if;
-        tap_play_addr <= std_logic_vector(TAP_ADDR);
+        tap_play_addr <= (others => '0');
         tap_cycle <= '0';
         tap_wrreq <= '0';
         tap_autoplay <= tap_download;
