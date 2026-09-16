@@ -321,9 +321,11 @@ signal cass_aud        : std_logic;
 signal ioctl_wr_d      : std_logic;
 signal ioctl_wait      : std_logic := '0';
 signal tap_rd          : std_logic; 
-signal tap_data_ready  : std_logic;
+signal dram_data_ready : std_logic;
 signal tap_cycle       : std_logic := '0';
 signal tap_download_d  : std_logic := '0';
+signal cs_ram_d        : std_logic := '1';
+signal tap_bus_grant   : std_logic;
 signal tape_adc_act    : std_logic;
 signal casmatch        : std_logic;
 signal sdram_cs        : std_logic;
@@ -1234,7 +1236,7 @@ dram_inst: entity work.sdram8
     refresh    => refresh,
     din        => sdram_din,      -- data input from chipset/cpu
     dout       => ram_dout_i,    -- data output to chipset/cpu
-    dout_valid => tap_data_ready,
+    dout_valid => dram_data_ready,
     addr       => sdram_addr,
     ce         => sdram_cs,
     we         => sdram_wr
@@ -1320,9 +1322,15 @@ tap_reset <= '1' when resetc16 = '1' or
                       else '0';
 tap_loaded <= '1' when tap_play_addr < tap_last_addr else '0';
 
+tap_bus_grant <= '1' when cs_ram = '1' and cs_ram_d = '0' and
+                          tap_wrfull = '0' and tap_loaded = '1' and tap_cycle = '0'
+                     else '0';
+tap_rd <= tap_bus_grant;
+
 process(clk_sys)
 begin
   if rising_edge(clk_sys) then
+      cs_ram_d <= cs_ram;
 
       if tap_reset = '1' then
         if tap_download = '1' then
@@ -1333,27 +1341,21 @@ begin
             tap_last_addr <= (others => '0');
         end if;
         tap_play_addr <= std_logic_vector(TAP_ADDR);
-        tap_rd <= '0';
         tap_cycle <= '0';
         tap_autoplay <= tap_download;
       else
-        -- C1530 requires one additional byte because its FIFO checks early.
-        tap_rd <= '0';
         tap_wrreq <= '0';
         tap_autoplay <= '0';
 
-        if tap_rd = '0' and tap_wrreq = '0' then
-          if tap_cycle = '1' then
+        if tap_cycle = '1' then
+          if dram_data_ready = '1' then
               tap_play_addr <= tap_play_addr + 1;
               tap_cycle <= '0';
               tap_wrreq <= '1';
               tap_data_in <= ram_dout_i;
-          else 
-            if tap_wrfull = '0' and tap_loaded = '1' then
-              tap_rd <= '1';
-              tap_cycle <= '1';
-            end if;
           end if;
+        elsif tap_bus_grant = '1' then
+          tap_cycle <= '1';
         end if;
       end if;
   end if;
@@ -1367,7 +1369,7 @@ port map (
   wav_mode        => '0',
   tap_version     => tap_version,
 
-  host_tap_in     => tap_data_in,  --ram_dout_i,
+  host_tap_in     => tap_data_in,
   host_tap_wrreq  => tap_wrreq,
   tap_fifo_wrfull => tap_wrfull,
   tap_fifo_error  => tap_finish,
