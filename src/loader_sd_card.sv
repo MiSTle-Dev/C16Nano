@@ -85,6 +85,7 @@ always_ff @(posedge clk) begin
 		begin
 			img_present[i] <= |sd_img_size;
 			img_size[i] <= sd_img_size[24:0];
+			boot_flags[i] <= 0;
 		end 
 	end
 
@@ -220,7 +221,7 @@ always_ff @(posedge clk) begin
 		READING: begin
 				if(addr < img_size[img_select])
 					io_state <= READ_NEXT;
-				else if(wr)
+				else if(wr || ioctl_wr || ioctl_wait)
 					io_state <= READING;
 				else 
 				begin
