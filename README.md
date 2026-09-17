@@ -20,10 +20,11 @@ This port has the following changes and enhancements:
 * PAL 720x576p@50Hz / NTSC 720x480p@60Hz HDMI Video and Audio Output
 * Choose between C16 (64KB) and Plus/4
 * Cartridge support (*.bin) for Plus/4 model
-* loadable Function ROM (*.bin) for Plus/4 model 
+* loadable Function ROM (*.bin) for Plus/4 model
 * Disk with write support (*.D64)
 * external disk drive support (D9)
 * direct BASIC program (*.PRG) injection loader
+* load Tape
 * loadable Kernal ROM
 * loadable C1541 DOS as selection from Tang Flash memory
 * Joystick with swap function
@@ -42,6 +43,13 @@ ROMS can only be used in the Plus/4 operation mode (OSD selection). Function ROM
 cat 3-plus-1.317053-01.bin 3-plus-1.317054-01.bin > function.bin
 cat t112003_calc_plus_lo.bin t112003_calc_plus_hi.bin > calc_plus.bin
 ```
+
+### Tape load
+
+Enter 'LOAD'
+and select from OSD a .tap file.  
+Screen will blank 'blue' and after short period the filename will appear for some seconds.  
+Screen will blank 'blue' again till tape file in entirely loaded. It takes time...
 
 ### Original ReadMe (has outdated and non-related info)
 
