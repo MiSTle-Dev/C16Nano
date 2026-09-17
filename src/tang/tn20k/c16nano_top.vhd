@@ -118,6 +118,20 @@ signal vsync       :  std_logic;
 signal r           :  std_logic_vector(3 downto 0);
 signal g           :  std_logic_vector(3 downto 0);
 signal b           :  std_logic_vector(3 downto 0);
+signal video_hsync : std_logic;
+signal video_vsync : std_logic;
+signal video_hblank : std_logic;
+signal video_vblank : std_logic;
+signal video_r : std_logic_vector(3 downto 0);
+signal video_g : std_logic_vector(3 downto 0);
+signal video_b : std_logic_vector(3 downto 0);
+signal fallback_dot_div : unsigned(1 downto 0) := (others => '0');
+signal fallback_hcounter : unsigned(8 downto 0) := (others => '0');
+signal fallback_vcounter : unsigned(8 downto 0) := (others => '0');
+signal fallback_active : std_logic;
+signal fallback_hsync_d : std_logic := '1';
+signal fallback_vsync_d : std_logic := '0';
+signal fallback_hold_counter : unsigned(21 downto 0) := (others => '0');
 
 signal mcu_start      : std_logic;
 signal mcu_sys_strobe : std_logic;
@@ -224,6 +238,7 @@ signal io_cycleD       : std_logic;
 signal ioctl_wr        : std_logic := '0';
 signal ioctl_addr      : std_logic_vector(22 downto 0);
 signal load_prg        : std_logic := '0';
+signal prg_finalize    : std_logic := '0';
 signal load_rom        : std_logic := '0';
 signal load_tap        : std_logic := '0';
 signal img_select      : std_logic_vector(2 downto 0);
@@ -323,17 +338,16 @@ signal ioctl_wr_d      : std_logic;
 signal ioctl_wait      : std_logic := '0';
 signal tap_rd          : std_logic; 
 signal dram_data_ready : std_logic;
-signal tap_cycle       : std_logic := '0';
 signal tap_download_d  : std_logic := '0';
-signal cs_ram_d        : std_logic := '1';
-signal tap_bus_grant   : std_logic;
 signal tape_adc_act    : std_logic;
 signal casmatch        : std_logic;
 signal sdram_cs        : std_logic;
 signal sdram_oe        : std_logic;
 signal sdram_wr        : std_logic;
+signal sdram_busy      : std_logic;
 signal crt_download_access : std_logic;
 signal function_download_access : std_logic;
+signal prg_download_access : std_logic;
 signal sdram_addr      : std_logic_vector(22 downto 0);
 signal sdram_din       : std_logic_vector(7 downto 0);
 signal sdram_rom_access : std_logic;
@@ -346,6 +360,9 @@ signal load_function   : std_logic := '0';
 signal disk_sd_wr_data : unsigned(7 downto 0);
 signal ext_iec_en      : std_logic_vector(1 downto 0);
 signal int_iec_drv     : std_logic_vector(1 downto 0);
+
+type tap_read_state_t is (TAP_IDLE, TAP_GAP, TAP_REQUEST, TAP_WAIT_DATA, TAP_RELEASE);
+signal tap_read_state : tap_read_state_t := TAP_IDLE;
 
 constant RAM_ADDR      : unsigned(22 downto 0) := 23x"0000000";-- System RAM: 64k
 constant CRT_ADDR      : unsigned(22 downto 0) := 23x"0200000";-- Cartridge ROM
@@ -658,14 +675,14 @@ port map(
       audio_div    => audio_div,
       
       ntscmode  => palmode,
-      vb_in     => vblank,
-      hb_in     => hblank,
-      hs_in_n   => hsync,
-      vs_in_n   => vsync,
+      vb_in     => video_vblank,
+      hb_in     => video_hblank,
+      hs_in_n   => video_hsync,
+      vs_in_n   => video_vsync,
 
-      r_in      => r,
-      g_in      => g,
-      b_in      => b,
+      r_in      => video_r,
+      g_in      => video_g,
+      b_in      => video_b,
 
       audio_l => audio_l,
       audio_r => audio_r,
@@ -685,6 +702,76 @@ port map(
       tmds_d_n   => tmds_d_n,
       tmds_d_p   => tmds_d_p
       );
+
+process(clk_sys, pll_locked)
+begin
+  if pll_locked = '0' then
+    fallback_dot_div <= (others => '0');
+    fallback_hcounter <= (others => '0');
+    fallback_vcounter <= (others => '0');
+    fallback_hsync_d <= '1';
+    fallback_vsync_d <= '0';
+    fallback_hold_counter <= (others => '0');
+  elsif rising_edge(clk_sys) then
+    fallback_hsync_d <= hsync;
+    fallback_vsync_d <= vsync;
+
+    if tap_read_state /= TAP_IDLE then
+      fallback_hold_counter <= to_unsigned(2_863_630, fallback_hold_counter'length);
+    elsif fallback_hold_counter /= 0 then
+      fallback_hold_counter <= fallback_hold_counter - 1;
+    end if;
+
+    if fallback_dot_div = 3 then
+      fallback_dot_div <= (others => '0');
+      if fallback_hcounter = 455 then
+        fallback_hcounter <= (others => '0');
+        if (palmode = '0' and fallback_vcounter = 311) or
+           (palmode = '1' and fallback_vcounter = 261) then
+          fallback_vcounter <= (others => '0');
+        else
+          fallback_vcounter <= fallback_vcounter + 1;
+        end if;
+      else
+        fallback_hcounter <= fallback_hcounter + 1;
+      end if;
+    else
+      fallback_dot_div <= fallback_dot_div + 1;
+    end if;
+
+    if fallback_active = '0' then
+      if fallback_hsync_d = '1' and hsync = '0' then
+        fallback_dot_div <= (others => '0');
+        fallback_hcounter <= to_unsigned(359, fallback_hcounter'length);
+      end if;
+      if fallback_vsync_d = '0' and vsync = '1' then
+        if palmode = '0' then
+          fallback_vcounter <= to_unsigned(254, fallback_vcounter'length);
+        else
+          fallback_vcounter <= to_unsigned(229, fallback_vcounter'length);
+        end if;
+      end if;
+    end if;
+  end if;
+end process;
+
+fallback_active <= '1' when tap_read_state /= TAP_IDLE or fallback_hold_counter /= 0 else '0';
+
+video_hsync <= '0' when fallback_active = '1' and fallback_hcounter >= 359 and fallback_hcounter < 391 else
+               '1' when fallback_active = '1' else hsync;
+video_hblank <= '1' when fallback_active = '1' and fallback_hcounter >= 353 and fallback_hcounter < 423 else
+                '0' when fallback_active = '1' else hblank;
+video_vsync <= '1' when fallback_active = '1' and
+                        ((palmode = '0' and fallback_vcounter >= 254 and fallback_vcounter < 257) or
+                         (palmode = '1' and fallback_vcounter >= 229 and fallback_vcounter < 232)) else
+               '0' when fallback_active = '1' else vsync;
+video_vblank <= '1' when fallback_active = '1' and
+                         ((palmode = '0' and fallback_vcounter >= 251 and fallback_vcounter < 269) or
+                          (palmode = '1' and fallback_vcounter >= 226 and fallback_vcounter < 244)) else
+                '0' when fallback_active = '1' else vblank;
+video_r <= x"0" when fallback_active = '1' else r;
+video_g <= x"0" when fallback_active = '1' else g;
+video_b <= x"6" when fallback_active = '1' else b;
 
 -- Clock tree and all frequencies in Hz
 --
@@ -985,22 +1072,30 @@ basic_inst: entity work.Gowin_pROM_basic
         ad => c16_addr(13 downto 0)
     );
 
-process(clk_sys, xrst)
+process(clk_sys, resetc16, detach_reset)
 begin
-  if xrst = '1' then
-   cartl <= '0';
-   carth <= '0';
+  if resetc16 = '1' or detach_reset = '1' then
+    cartl <= '0';
+    carth <= '0';
   elsif rising_edge(clk_sys) then
-   cartl <= '1' when ioctl_wr = '1' and load_crt ='1' and ioctl_addr(22 downto 14) = 0;
-   carth <= '1' when ioctl_wr = '1' and load_crt ='1' and ioctl_addr(22 downto 14) = 1;
+    if old_download = '0' and ioctl_download = '1' and load_crt = '1' then
+      cartl <= '0';
+      carth <= '0';
+    elsif ioctl_wr = '1' and load_crt = '1' then
+      if ioctl_addr(22 downto 14) = 0 then
+        cartl <= '1';
+      elsif ioctl_addr(22 downto 14) = 1 then
+        carth <= '1';
+      end if;
+    end if;
   end if;
 end process;
 
 kern <= '1' when c16_addr(15 downto 8) = x"FC" else '0';
 
-process(clk_sys, resetc16)
+process(clk_sys, xreset)
 begin
-	if resetc16 = '1' then
+	if xreset = '1' then
     romh <= "00";
     roml <= "00";
   elsif rising_edge(clk_sys) then
@@ -1046,6 +1141,7 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	CLK28    => clk_sys,
 	RESET    => xreset,
 	INWAIT   => core_wait,
+  CORE_EN  => not core_wait,
 	PAL      => palmode,
 	HSYNC    => hsync,
 	VSYNC    => vsync,
@@ -1118,6 +1214,8 @@ begin
       dl_wr <= '0';
       wait_cnt := 0;
       ioctl_wait <= '0';
+      prg_finalize <= '0';
+      state <= x"0";
     end if;
 
     if wait_cnt /= 0 then
@@ -1125,6 +1223,9 @@ begin
     elsif wait_cnt = 0 then
       dl_wr <= '0';
       ioctl_wait <= '0';
+      if state = x"0" then
+        prg_finalize <= '0';
+      end if;
     end if;
 
     if ioctl_download = '1' and load_prg = '1' then
@@ -1159,10 +1260,15 @@ begin
 
     if old_download = '1' and ioctl_download = '0' and load_prg = '1' then
       state <= x"1"; 
+      prg_finalize <= '1';
     end if;
 
     if state /= x"0" then
-      state <= state + 1;
+      if state(0) = '1' then
+        state <= state + 1;
+      elsif wait_cnt = 0 then
+        state <= state + 1;
+      end if;
     end if;
 
     case(state) is
@@ -1234,6 +1340,7 @@ dram_inst: entity work.sdram8
     -- cpu/chipset interface
     reset_n    => pll_locked,-- init signal after FPGA config to initialize RAM
     ready      => open,
+    busy       => sdram_busy,
     clk        => clk_sys,       -- sdram is accessed at 28MHz
     refresh    => refresh,
     din        => sdram_din,      -- data input from chipset/cpu
@@ -1245,7 +1352,8 @@ dram_inst: entity work.sdram8
   );
 
   refresh <= '0' when (ioctl_download and (load_prg or load_crt or load_function or load_tap)) = '1' else c16_refresh;
-  core_wait <= '1' when ioctl_download = '1' else '0';
+  core_wait <= '1' when ioctl_download = '1' or prg_finalize = '1' or
+                            tap_read_state /= TAP_IDLE else '0';
 
   sdram_rom_access <= '1' when (cs0 = '0' and (roml = 1 or roml = 2)) or
                                (cs1 = '0' and (romh = 1 or romh = 2) and kern = '0') else '0';
@@ -1258,60 +1366,56 @@ dram_inst: entity work.sdram8
                                        dl_addr(15 downto 14) /= "10" and
                                        dl_addr(15 downto 14) /= "11" else '0';
 
+  prg_download_access <= '1' when dl_wr = '1' and
+                                  ((ioctl_download = '1' and load_prg = '1') or prg_finalize = '1') else '0';
+
   tap_wr <= dl_wr and ioctl_download and load_tap;
 
-  sdram_cs <= dl_wr when ioctl_download = '1' and load_prg = '1' else
+  sdram_cs <= dl_wr when prg_download_access = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
               dl_wr when ioctl_download = '1' and load_tap = '1' else
               '0' when ioctl_download = '1' else
-              '1' when tap_rd = '1' else
+              tap_rd when tap_read_state /= TAP_IDLE else
               sdram_rom_access when sdram_rom_access = '1' else
               not cs_ram;
 
-  sdram_wr <= dl_wr when ioctl_download = '1' and load_prg = '1' else
+  sdram_wr <= dl_wr when prg_download_access = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
               dl_wr when ioctl_download  = '1'and load_tap = '1' else
               '0' when ioctl_download = '1' else
-              '0' when tap_rd = '1' else
+              '0' when tap_read_state /= TAP_IDLE else
               not c16_rnw when sdram_rom_access = '0' else
               '0';
 
   sdram_addr <= std_logic_vector(TAP_ADDR + unsigned(tap_play_addr))
-                  when tap_rd = '1' else
+                  when tap_read_state /= TAP_IDLE else
                 std_logic_vector(TAP_ADDR + unsigned(tap_dl_addr))
                   when tap_wr = '1' else
 
                 7x"00" & dl_addr
-                  when ioctl_download = '1' and load_prg = '1' else
+                  when prg_download_access = '1' else
 
-                std_logic_vector(CRT_ADDR + resize(unsigned(dl_addr(13 downto 0)), CRT_ADDR'length))
-                  when ioctl_download = '1' and load_crt = '1' and
-                       dl_addr(15 downto 14) = "00" else
-                std_logic_vector(CRT_ADDR + 16#4000# +
-                                 resize(unsigned(dl_addr(13 downto 0)), CRT_ADDR'length))
-                  when ioctl_download = '1' and load_crt = '1' and
-                       dl_addr(15 downto 14) = "01" else
+                std_logic_vector(CRT_ADDR + resize(unsigned(dl_addr), CRT_ADDR'length))
+                  when ioctl_download = '1' and load_crt = '1' else
 
-                std_logic_vector(FUNC_ADDR + resize(unsigned(dl_addr(13 downto 0)), FUNC_ADDR'length))
-                  when function_download_access = '1' and dl_addr(15 downto 14) = "00" else
-                std_logic_vector(FUNC_ADDR + 16#4000# +
-                                 resize(unsigned(dl_addr(13 downto 0)), FUNC_ADDR'length))
-                  when function_download_access = '1' and dl_addr(15 downto 14) = "01" else
+                std_logic_vector(FUNC_ADDR + resize(unsigned(dl_addr), FUNC_ADDR'length))
+                  when function_download_access = '1' else
 
                 std_logic_vector(FUNC_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
-                  when cs1 = '0' and unsigned(romh) = 2 and kern = '0' else
+                  when cs1 = '0' and romh = 2 and kern = '0' else
                 std_logic_vector(FUNC_ADDR + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
-                  when cs0 = '0' and unsigned(roml) = 2 else
+                  when cs0 = '0' and roml = 2 else
 
                 std_logic_vector(CRT_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), CRT_ADDR'length))
-                  when cs1 = '0' and unsigned(romh) = 1 and kern = '0' else
+                  when cs1 = '0' and romh = 1 and kern = '0' else
                 std_logic_vector(CRT_ADDR + resize(unsigned(c16_addr(13 downto 0)), CRT_ADDR'length))
-                  when cs0 = '0' and unsigned(roml) = 1 else
+                  when cs0 = '0' and roml = 1 else
                 7x"00" & c16_addr;
 
-  sdram_din <= dl_data when ioctl_download = '1' and (load_prg = '1' or load_crt = '1' or load_function = '1' or load_tap = '1') else
+  sdram_din <= dl_data when prg_download_access = '1' or
+                                (ioctl_download = '1' and (load_crt = '1' or load_function = '1' or load_tap = '1')) else
                c16_dout;
 
 --------------- TAP -------------------
@@ -1325,16 +1429,11 @@ tap_reset <= '1' when resetc16 = '1' or
                       else '0';
 tap_loaded <= '1' when tap_play_addr < tap_last_addr else '0';
 
-tap_bus_grant <= '1' when cs_ram = '1' and cs_ram_d = '0' and
-                          tap_wrfull = '0' and tap_loaded = '1' and tap_cycle = '0'
-                     else '0';
-tap_rd <= tap_bus_grant;
+tap_rd <= '1' when tap_read_state = TAP_REQUEST else '0';
 
 process(clk_sys)
 begin
   if rising_edge(clk_sys) then
-      cs_ram_d <= cs_ram;
-
       if tap_reset = '1' then
         if tap_download = '1' then
             tap_last_addr <= ioctl_addr + 2;
@@ -1342,23 +1441,41 @@ begin
             tap_last_addr <= (others => '0');
         end if;
         tap_play_addr <= (others => '0');
-        tap_cycle <= '0';
+        tap_read_state <= TAP_IDLE;
         tap_wrreq <= '0';
         tap_autoplay <= tap_download;
       else
         tap_wrreq <= '0';
         tap_autoplay <= '0';
 
-        if tap_cycle = '1' then
-          if dram_data_ready = '1' then
+        case tap_read_state is
+          when TAP_IDLE =>
+            if tap_wrfull = '0' and tap_loaded = '1' and cs_ram = '1' and
+               sdram_rom_access = '0' and sdram_busy = '0' then
+              tap_read_state <= TAP_GAP;
+            end if;
+
+          when TAP_GAP =>
+            if sdram_busy = '0' then
+              tap_read_state <= TAP_REQUEST;
+            end if;
+
+          when TAP_REQUEST =>
+            tap_read_state <= TAP_WAIT_DATA;
+
+          when TAP_WAIT_DATA =>
+            if dram_data_ready = '1' then
               tap_play_addr <= tap_play_addr + 1;
-              tap_cycle <= '0';
               tap_wrreq <= '1';
               tap_data_in <= ram_dout_i;
-          end if;
-        elsif tap_bus_grant = '1' then
-          tap_cycle <= '1';
-        end if;
+              tap_read_state <= TAP_RELEASE;
+            end if;
+
+          when TAP_RELEASE =>
+            if sdram_busy = '0' then
+              tap_read_state <= TAP_IDLE;
+            end if;
+        end case;
       end if;
   end if;
 end process;

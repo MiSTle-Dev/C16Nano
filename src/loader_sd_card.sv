@@ -220,6 +220,8 @@ always_ff @(posedge clk) begin
 		READING: begin
 				if(addr < img_size[img_select])
 					io_state <= READ_NEXT;
+				else if(wr)
+					io_state <= READING;
 				else 
 				begin
 					ioctl_download <= 0;

@@ -74,6 +74,7 @@
 
 module ted(
     input wire clk,                       // clk must be 4*dot clk so 28.375152MHz for PAL (1.6*PAL system's clock) and 28.63636 for NTSC (2*NTSC system's clock) 
+	input wire clk_en,
     input wire [15:0] addr_in,
 	input         reset,
     output wire [15:0] addr_out,
@@ -330,7 +331,7 @@ assign single_cycle_end=(cycle_end & phi)?1'b1:1'b0;	// high pulse at the end of
 // Clock signal driver phi=Single Clock  dphi=Double Clock
 //---------------------------------------------------------------------------
 
-always @(posedge clk)											// Counting FPGA clock cycles during double clock. phicounter is mod16 counter, 16*clk=half phi
+always @(posedge clk) if (clk_en || reset) // Counting FPGA clock cycles during double clock. phicounter is mod16 counter, 16*clk=half phi
 	begin
 	phicounter<=phicounter+1;
 	end
@@ -341,19 +342,19 @@ assign cpuenable=(single_cycle_end)?1'b1:					// Generated CPU enable signal. Us
 						(cycle_end && !singleclock)?1'b1:
 						1'b0;
 			
-always @(posedge clk)											// Internal single clock signal is always generated
+always @(posedge clk) if (clk_en || reset) // Internal single clock signal is always generated
 	begin
 		if (cycle_end)
 				phi<=~phi;											
 	end
 
-always @(posedge clk)											// clock mode controller. Single or double clock multiplex for the CPU.
+always @(posedge clk) if (clk_en || reset) // clock mode controller. Single or double clock multiplex for the CPU.
 	begin
 	if(single_cycle_end)											// clock mode change happens only at single clock boundary
 		singleclock<=((enabledisplay & ext_fetch) | refresh | clkmode | stop);		// there are 4 criterias to generate single clock: display area,dram refresh,forced 1Mhz,TED stop
 	end
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(single_cycle_end)
 		stopreg<=stop;
@@ -363,7 +364,7 @@ always @(posedge clk)
 // Attribute Fetch
 //---------------------------------------------------------------------------
 
-always @(posedge clk)											// flip flop to signal external fetch single clock window, delayed with 1 single clock cycle
+always @(posedge clk) if (clk_en || reset) // flip flop to signal external fetch single clock window, delayed with 1 single clock cycle
 	begin
 	if(hpos_296)
 		ext_fetch<=0;
@@ -377,7 +378,7 @@ assign attr_fetch_line=(videoline>=0 && videoline<203);
 // DRAM Refresh
 //---------------------------------------------------------------------------	
 
-always @(posedge clk)											// refresh single clock control
+always @(posedge clk) if (clk_en || reset) // refresh single clock control
 	begin
 	if(hpos_336)
 		refresh<=0;
@@ -387,7 +388,7 @@ always @(posedge clk)											// refresh single clock control
 
 assign refresh_o= refresh;
 
-always @(posedge clk)											// refresh counter increment control
+always @(posedge clk) if (clk_en || reset) // refresh counter increment control
 	begin
 	if(hpos_343)
 		refresh_inc<=0;
@@ -395,7 +396,7 @@ always @(posedge clk)											// refresh counter increment control
 		refresh_inc<=1;
 	end
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 		if(single_cycle_end & (refresh_inc|stopreg))
 					refreshcounter<=refreshcounter+1;
@@ -410,7 +411,7 @@ always @(posedge clk)
 assign tick8=(phicounter[1:0]==3)?1'b1:1'b0; //8Mhz clock tick for pixelclock. tick8 must activate one fastclk cycle earlier to use it for hcounter 
 
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 		hcounter<=hcounter_next;
 		vcounter<=vcounter_next;
@@ -452,7 +453,7 @@ always @*									//vertical counter next state logic
 				end
 	end
 	
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(hpos_384)
 		inc_vertline_window<=1;
@@ -469,7 +470,7 @@ always @(posedge clk)
 // timer 1 changes approximately at half of phi low cycle after IRQ position (IRQ position is 160ns after phi low cycle start).
 //   
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 		if (tedwrite && addr_in[5:0]==TIMER1LO)                                // load timer 1 at cycle border
 			begin
@@ -498,7 +499,7 @@ always @(posedge clk)
 // timer 2 decrements during even single clock cycle (phi=1)
 // timer 2 changes approximately at odd-even single clock cycle boundary (phi low - high transition)
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin										                            
     	if (tedwrite && addr_in[5:0]==TIMER2LO)                            // load timer 2 low byte at $FF02 write		
 			begin
@@ -522,7 +523,7 @@ always @(posedge clk)
 // timer 3 decrements during even single clock cycle (phi=1)
 // timer 3 changes approximately at half of phi high cycle (contrary to timer 1)
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
     	if (tedwrite && addr_in[5:0]==TIMER3LO)							// load timer 3 low byte at $FF04 write
 			begin
@@ -547,7 +548,7 @@ always @(posedge clk)
 
 assign irqpos=(phicounter==4 & ~phi)?1'b1:1'b0;
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(resetCnt1Irq)
 		Cnt1Irq<=0;
@@ -555,7 +556,7 @@ always @(posedge clk)
 		Cnt1Irq<=1;
 	end
 	
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(resetCnt2Irq)
 		Cnt2Irq<=0;
@@ -563,7 +564,7 @@ always @(posedge clk)
 		Cnt2Irq<=1;
 	end
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(resetCnt3Irq)
 		Cnt3Irq<=0;
@@ -576,7 +577,7 @@ always @(posedge clk)
 // Raster IRQ
 //---------------------------------------------------------------------------
 	
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if (resetRasterIrq)
 		RasterIrq<=0;
@@ -601,7 +602,7 @@ assign irq=~((enCnt1Irq & Cnt1Irq)|(enCnt2Irq & Cnt2Irq)| (enCnt3Irq & Cnt3Irq) 
 // AEC signal generating
 //---------------------------------------------------------------------------
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 		if((singleclock & ~phi) | (dma_state==TDMA))
 			aec<=0;
@@ -620,7 +621,7 @@ assign ba=(dma_state==IDLE)?1'b1:1'b0;
 
 assign badline=((yscroll_reg==videoline[2:0]) & enabledisplay & attr_fetch_line)?1'b1:1'b0;			// signal 1st badline
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(inc_vertline_window & single_cycle_end)
 		begin
@@ -633,7 +634,7 @@ always @(posedge clk)
 		badline2<=0;*/
 	end
 
-always @(posedge clk)										// synchronize yscroll changes to single cycle border
+always @(posedge clk) if (clk_en || reset) // synchronize yscroll changes to single cycle border
 	begin
 	if(single_cycle_end)
 		yscroll_reg<=yscroll;
@@ -644,7 +645,7 @@ always @(posedge clk)										// synchronize yscroll changes to single cycle bo
 // EnableDisplay signal
 //---------------------------------------------------------------------------
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(videoline==0 && den==1)
 		enabledisplay<=1;
@@ -656,7 +657,7 @@ always @(posedge clk)
 // Bitmapmask fetch signal
 //---------------------------------------------------------------------------
 
-always @(posedge clk)					// character fetch window starts at first badline2 and stops at line 204. It signals that character fetches can happen in these lines.
+always @(posedge clk) if (clk_en || reset) // character fetch window starts at first badline2 and stops at line 204. It signals that character fetches can happen in these lines.
 	begin
 	if(videoline==9'd204)
 		char_fetch<=0;
@@ -667,7 +668,7 @@ always @(posedge clk)					// character fetch window starts at first badline2 and
 // Character Position register $FF1A/$FF1B
 //----------------------------------------------------------------------------
 
-always @(posedge clk)					// character fetch position increase from horizontal count 432 to horizontal count 296
+always @(posedge clk) if (clk_en || reset) // character fetch position increase from horizontal count 432 to horizontal count 296
 	begin
 	if(hpos_296)
 		inc_charpos<=0;
@@ -675,7 +676,7 @@ always @(posedge clk)					// character fetch position increase from horizontal c
 		inc_charpos<=1;
 	end
 
-always @(posedge clk)					// DMA and Charpos latch delay trick
+always @(posedge clk) if (clk_en || reset) // DMA and Charpos latch delay trick
 	begin
 	latch_charposition<=0;
 	if(hpos_288)
@@ -687,7 +688,7 @@ always @(posedge clk)					// DMA and Charpos latch delay trick
 		end
 	end
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(hpos_392)
 		begin
@@ -710,7 +711,7 @@ always @(posedge clk)
 // away from the value the program wrote, on 11 to 51 of the 196 lines the effect covers,
 // so those bands were fetched from the wrong place. plus4emu keeps the written bytes in
 // tedRegisters[$1A]/[$1B] and rebuilds characterPositionReload from them on every write.
-always @(posedge clk)					// Character Position Reload register $FF1A/$FF1B
+always @(posedge clk) if (clk_en || reset) // Character Position Reload register $FF1A/$FF1B
 	begin
 	if(tedwrite & addr_in[5:0]==CHARPOSRELOADHI)
 			CharPosReload<={data_in[1:0],CharPosRegLo};
@@ -727,7 +728,7 @@ always @(posedge clk)					// Character Position Reload register $FF1A/$FF1B
 // A write in that cycle therefore still rebuilds the reload from what the program wrote,
 // and takes priority over the copy back; plus4emu does the same with its delayed
 // updateCharPosReloadRegisters event.
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(CharPosLatch & latch_charposition & VertSubActive & ~charpos_write_d)
 		charpos_copyback<=1;
@@ -735,7 +736,7 @@ always @(posedge clk)
 		charpos_copyback<=0;
 	end
 
-always @(posedge clk)					// $FF1A/$FF1B write latches
+always @(posedge clk) if (clk_en || reset) // $FF1A/$FF1B write latches
 	begin
 	if(tedwrite & addr_in[5:0]==CHARPOSRELOADHI)
 			CharPosRegHi<=data_in[1:0];
@@ -762,10 +763,10 @@ always @(posedge clk)					// $FF1A/$FF1B write latches
 // and 18 of the 197 lines of the effect fetched their pixel data from the wrong address.
 // This holds the write off for exactly that one clock, so the latch skips the line the CPU
 // wrote in and nothing else changes.
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	charpos_write_d<=tedwrite & (addr_in[5:0]==CHARPOSRELOADHI | addr_in[5:0]==CHARPOSRELOADLO);
 
-always @(posedge clk)									// Character Position counter (not user accessible)
+always @(posedge clk) if (clk_en || reset) // Character Position counter (not user accessible)
 	begin
 	if(hpos_392)											// clear character position in each line at 392
 		CharPosition<=0;
@@ -785,7 +786,7 @@ always @(posedge clk)									// Character Position counter (not user accessible
 // DMA FSM
 
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	dma_state<=dma_nextstate;
  	end
@@ -825,7 +826,7 @@ always @*
 	endcase	
 	end
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(hpos_407 & tick8)
 		dma_window<=1;
@@ -838,7 +839,7 @@ always @(posedge clk)
 // Attribute fetch address generation (videocounter is DMA position counter)
 //---------------------------------------------------------------------------
 
-always @(posedge clk)																		// videocounter increase window				
+always @(posedge clk) if (clk_en || reset) // videocounter increase window
 	begin
 	if(enabledisplay)
 		begin
@@ -849,7 +850,7 @@ always @(posedge clk)																		// videocounter increase window
 		end
 	end
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(hpos_392 & videoline==9'd205)										    // clear videocounter reload register at line 205
 		videocounter_reload<=0;
@@ -859,7 +860,7 @@ always @(posedge clk)
 		videocounter_reload<=videocounter;
 	end	
 	
-always @(posedge clk)						                               // videocounter used for attribute and character pointer fetches (DMA counter)
+always @(posedge clk) if (clk_en || reset) // videocounter used for attribute and character pointer fetches (DMA counter)
 	begin
 	if(enabledisplay)
 		begin
@@ -876,7 +877,7 @@ always @(posedge clk)						                               // videocounter used f
 //---------------------------------------------------------------------------
 
 	
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(single_cycle_end)
 		begin
@@ -903,7 +904,7 @@ always @(posedge clk)
 		end
 	end
 	
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(single_cycle_end)
 		begin
@@ -928,7 +929,7 @@ always @(posedge clk)
 	end
 
 
-always @(posedge clk)							               // character window flag is needed for fetching pixel data from bus
+always @(posedge clk) if (clk_en || reset) // character window flag is needed for fetching pixel data from bus
 	begin
 	if(hpos_304)
 		char_window<=0;
@@ -936,7 +937,7 @@ always @(posedge clk)							               // character window flag is needed fo
 		char_window<=1;
 	end
 
-always @(posedge clk)								          // latch pixel data from data bus at phi0 change from 0 to 1
+always @(posedge clk) if (clk_en || reset) // latch pixel data from data bus at phi0 change from 0 to 1
 	begin
 	if(char_window)
 		begin
@@ -951,7 +952,7 @@ always @(posedge clk)								          // latch pixel data from data bus at phi0
 // Vertical Sub register represents actual raster line inside character
 //---------------------------------------------------------------------------
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(hpos_392)					
 		inc_vertsub_window<=1;
@@ -965,7 +966,7 @@ always @(posedge clk)
 		VertSubActive<=0;
 	end
 		
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 		begin
 			if(tedwrite && addr_in[5:0]==FLASH_VERTSUB)					// if it is written by user
 				VertSubCount<=data_in[2:0];
@@ -982,7 +983,7 @@ always @(posedge clk)
 // 5th bit of FlashCount contains flash status and not accessible via FF1F register
 //---------------------------------------------------------------------------
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(hpos_348)
 		inc_flashcount_window<=1;
@@ -1068,7 +1069,7 @@ end
 // Border control
 //---------------------------------------------------------------------------
 
-always @(posedge clk)							// 25/24 row select and top/bottom borders
+always @(posedge clk) if (clk_en || reset) // 25/24 row select and top/bottom borders
 	begin
 		if(rsel==1) begin
 			if(videoline==9'd4)					// if 25 rows mode, screen starts at line 4
@@ -1090,7 +1091,7 @@ always @(posedge clk)							// 25/24 row select and top/bottom borders
 // Two independent flip-flops (one per screen width) give the same picture for a static CSEL, but
 // they make it impossible to change CSEL inside the line so that the reset event is skipped,
 // which is exactly how demos open the side border.
-always @(posedge clk)							// 38/40 columns select and side borders
+always @(posedge clk) if (clk_en || reset) // 38/40 columns select and side borders
 	begin
 		if(tick8 & ((csel & hpos_320)|(~csel & hpos_312)))
 			sideborder<=0;
@@ -1105,7 +1106,7 @@ always @(posedge clk)							// 38/40 columns select and side borders
 // VideoShift Register	
 //---------------------------------------------------------------------------
 	
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if (hpos_312 & tick8)
 		videoshift<=0;
@@ -1113,7 +1114,7 @@ always @(posedge clk)
 		videoshift<=1;
 	end
 
-always @(posedge clk)						// video shift register stores fetched video data until pixelshiftregister is loaded
+always @(posedge clk) if (clk_en || reset) // video shift register stores fetched video data until pixelshiftregister is loaded
 	begin
 	if(hpos_440)
 		begin
@@ -1134,7 +1135,7 @@ always @(posedge clk)						// video shift register stores fetched video data unt
 		end
 	end
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
     begin
 	if(hpos_440)
 		begin
@@ -1161,7 +1162,7 @@ assign cursor=(waitingcursor & ~FlashCount[4]);
 // Pixel Generator
 // Final screen is delayed by 1 pixel 
 //---------------------------------------------------------------------------
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
     begin
     if (cycle_end)
             begin
@@ -1169,7 +1170,7 @@ always @(posedge clk)
             end
      end
 	
-always @(posedge clk)										// video pixel shift register
+always @(posedge clk) if (clk_en || reset) // video pixel shift register
 	begin
 	if(videoshift | sideborder)								// shift register works only when beam is on the visible screen area
 		begin
@@ -1263,7 +1264,7 @@ always @*									// video pixel color generator
 			pixelcolor=excolor;
 	end
 
-always @(posedge clk)						// latch pixelcolor and multiplex it with blank signal
+always @(posedge clk) if (clk_en || reset) // latch pixelcolor and multiplex it with blank signal
 	begin
 	if (tick8)
 		if(~blanking)
@@ -1286,12 +1287,12 @@ assign EQ_STOP = (~pal)?9'd260:9'd235;				// Equalization stop
 assign VBLANK_START = (~pal)?9'd251:9'd226; 		// Screen blanking start
 assign VBLANK_STOP = (~pal)?9'd269:9'd244;		    // Screen blanking stop// Composite Sync signal
 
-always @(posedge clk)								// composite synchron is either hsync or equalization+vsync
+always @(posedge clk) if (clk_en || reset) // composite synchron is either hsync or equalization+vsync
 	begin
 	csyncreg<=(equalization)?(eq1&eq2)^vsyncreg:hsyncreg;
 	end
 
-always @(posedge clk)								// vsync signal inverts equalization signal
+always @(posedge clk) if (clk_en || reset) // vsync signal inverts equalization signal
 	begin
 	if (videoline==VS_START && hpos_400)
 		vsyncreg<=1;
@@ -1299,7 +1300,7 @@ always @(posedge clk)								// vsync signal inverts equalization signal
 		vsyncreg<=0;
 	end
 
-always @(posedge clk)								// equalization signal active during actual vsync+equalization window
+always @(posedge clk) if (clk_en || reset) // equalization signal active during actual vsync+equalization window
 	begin
 	if(videoline==EQ_START && hpos_400)
 		equalization<=1;
@@ -1307,7 +1308,7 @@ always @(posedge clk)								// equalization signal active during actual vsync+e
 		equalization<=0;
 	end
 
-always @(posedge clk)								// Equalization pulses generated by horizontal decoder events
+always @(posedge clk) if (clk_en || reset) // Equalization pulses generated by horizontal decoder events
 	begin
 	if(hpos_154)
 		eq1<=0;
@@ -1319,7 +1320,7 @@ always @(posedge clk)								// Equalization pulses generated by horizontal deco
 		eq2<=1;
 	end
 	
-always @(posedge clk)								//	Horizontal sync pulse (due to original HMOS technology signal change takes 2 pixels long thus these change positions differ from the specification)
+always @(posedge clk) if (clk_en || reset) //	Horizontal sync pulse (due to original HMOS technology signal change takes 2 pixels long thus these change positions differ from the specification)
 	begin
 	if(hpos_359)
 		hsyncreg<=0;
@@ -1327,7 +1328,7 @@ always @(posedge clk)								//	Horizontal sync pulse (due to original HMOS tech
 		hsyncreg<=1;
 	end
 
-always @(posedge clk)							    // horizontal blanking zone
+always @(posedge clk) if (clk_en || reset) // horizontal blanking zone
 	begin
 	if(hpos_423)										
 		hblank<=0;
@@ -1335,7 +1336,7 @@ always @(posedge clk)							    // horizontal blanking zone
 		hblank<=1;
 	end
 
-always @(posedge clk)							    // vertical blanking zone
+always @(posedge clk) if (clk_en || reset) // vertical blanking zone
 	begin
 	if(videoline==VBLANK_STOP)
 		vblank<=0;
@@ -1343,7 +1344,7 @@ always @(posedge clk)							    // vertical blanking zone
 		vblank<=1;
 	end
 
-always @(posedge clk)							    // Burst signal generation for composite video signal (signals burst signal area)
+always @(posedge clk) if (clk_en || reset) // Burst signal generation for composite video signal (signals burst signal area)
 	begin
 	if(hpos_394)
 		burstreg<=1'b1;
@@ -1363,7 +1364,7 @@ assign even=videoline[0];					        // signals odd/even lines for external PAL
 // Memory Controller
 //---------------------------------------------------------------------------
 
-always @(posedge clk)		    // Generating RAS, internal CAS and MUX signals based on clk28 cycle numbers. Not 100% precise reproduction of original TED timing but still in dram specifications
+always @(posedge clk) if (clk_en || reset) // Generating RAS, internal CAS and MUX signals based on clk28 cycle numbers. Not 100% precise reproduction of original TED timing but still in dram specifications
 	case (phicounter)			// one clk28 cycle is 35.35ns
 	1:		begin	
 				ras<=1;
@@ -1408,7 +1409,7 @@ assign tedreg=(addr_in[15:6]==10'b1111111100 && (addr_in[5]==0 || addr_in[5:1]==
 
 assign addr_out=(~aec)?addr_out_reg:16'hffff;
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 		if(cycle_end)
 			begin
@@ -1460,7 +1461,7 @@ always @*
 assign tedwrite=tedreg&~rw&cycle_end;		            // It signals TED register write which happens always when rw is low and end of double clock cycle
 assign tedlatch=tedwrite_delay & (phicounter==3);		// trying to simulate when exactly the hcounter is written by TED
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 		if(tedwrite)
 			tedwrite_delay<=1;
@@ -1468,7 +1469,7 @@ always @(posedge clk)
 			tedwrite_delay<=0;
 	end
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	resetRasterIrq<=1'b0;
 	resetLpIrq<=1'b0;
@@ -1600,7 +1601,7 @@ always @(posedge clk)
 
 // TED register read
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(tedreg & rw)
 		begin
@@ -1751,7 +1752,7 @@ reg [15:0] dacvolume;
 
 assign digi_sound=(ch1audio ? dacvolume : 15'd0)+(ch2audio ? dacvolume : 15'd0);
 
-always @(posedge clk)						            //	audio cycle counter divides single clock by 4
+always @(posedge clk) if (clk_en || reset) //	audio cycle counter divides single clock by 4
 	begin
 	if(single_cycle_end)
 		audiocycle<=audiocycle+1;
@@ -1762,7 +1763,7 @@ assign ch2clk=single_cycle_end&(audiocycle==2'b01);		// Channel2 clock
 
 // Channel 1
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(ch1clk)
 		begin
@@ -1774,7 +1775,7 @@ always @(posedge clk)
 
 assign ch1stateclk=(ch1count==10'h3ff)?1'b1:1'b0;
 
-always @(posedge clk)	                                // Channel 1 state clock rising edge detection 
+always @(posedge clk) if (clk_en || reset) // Channel 1 state clock rising edge detection
 	begin
 	ch1stateclk_prev<=ch1stateclk;
 	if(damode|watchdog_ch1max)							// reset ch1state if damode is enabled or watchdog timer expires
@@ -1785,7 +1786,7 @@ always @(posedge clk)	                                // Channel 1 state clock r
 	
 assign ch1audio=(ch1en)?~ch1state:1'b0;		            // ch1audio before D/A conversion
 
-always @(posedge clk)									// emulating dynamic latch behaviour using watchdog timer (forgets setting after 188416 * audio clock cycles)
+always @(posedge clk) if (clk_en || reset) // emulating dynamic latch behaviour using watchdog timer (forgets setting after 188416 * audio clock cycles)
 	begin
 	if((~ch1stateclk_prev & ch1stateclk)|watchdog_ch1max)		// reset watchdog timer at channel1 state change or when maximum time reached
 		watchdog_ch1<=0;
@@ -1797,7 +1798,7 @@ assign watchdog_ch1max=(watchdog_ch1==18'd188416)?1'b1:1'b0;
 
 // Channel 2
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(ch2clk)
 		begin
@@ -1809,7 +1810,7 @@ always @(posedge clk)
 
 assign ch2stateclk=(ch2count==10'h3ff)?1'b1:1'b0;
 
-always @(posedge clk)	                                // Channel 2 state clock rising edge detection 
+always @(posedge clk) if (clk_en || reset) // Channel 2 state clock rising edge detection
 	begin
 	ch2stateclk_prev<=ch2stateclk;
 	if(damode|watchdog_ch2max)						    // reset ch2state if damode is enabled or watchdog timer expires
@@ -1820,7 +1821,7 @@ always @(posedge clk)	                                // Channel 2 state clock r
 	
 assign ch2audio=(ch2en)?~ch2state:noise;		        // ch2audio combined with noise before D/A conversion
 
-always @(posedge clk)									// emulating dynamic latch behaviour using watchdog timer (forgets setting after 188416 * audio clock cycles)
+always @(posedge clk) if (clk_en || reset) // emulating dynamic latch behaviour using watchdog timer (forgets setting after 188416 * audio clock cycles)
 	begin
 	if((~ch2stateclk_prev & ch2stateclk)|watchdog_ch2max)		// reset watchdog timer at channel2 state change or when maximum time reached
 		watchdog_ch2<=0;
@@ -1833,7 +1834,7 @@ assign watchdog_ch2max=(watchdog_ch2==18'd188416)?1'b1:1'b0;
 
 // Noise generator
 
-always @(posedge clk)
+always @(posedge clk) if (clk_en || reset)
 	begin
 	if(damode)
 		noisegen<=0;
@@ -1885,7 +1886,7 @@ always @*								                // volume value conversion for 16bit PCM signal
  	endcase
 	end
 
-always @(posedge clk)					                // generating PWM pulses for channel1
+always @(posedge clk) if (clk_en || reset) // generating PWM pulses for channel1
 	begin
 	if(tick8)
 		begin
@@ -1899,7 +1900,7 @@ always @(posedge clk)					                // generating PWM pulses for channel1
 		end
 	end
 
-always @(posedge clk)					                // generating PWM pulses for channel2
+always @(posedge clk) if (clk_en || reset) // generating PWM pulses for channel2
 	begin
 	if(tick8)
 		begin

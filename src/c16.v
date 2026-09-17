@@ -35,6 +35,7 @@ module C16
 	input         CLK28,
 	input         RESET,
 	input         INWAIT,
+	input         CORE_EN,
 
 	output        HSYNC,
 	output        VSYNC,
@@ -128,7 +129,7 @@ mos8501 cpu
 (
 	.clk(CLK28), 
 	.reset(sreset), 
-	.enable(cpuenable && !INWAIT),  
+	.enable(cpuenable && !INWAIT && CORE_EN),
 	.irq_n(irq_n & acia_irq_n), //  & ~acia_irq),
 	.data_in(c16_data), 
 	.data_out(cpu_data), 
@@ -154,6 +155,7 @@ wire signed [15:0] digi_sound;
 ted mos8360
 (
 	.clk(CLK28),
+	.clk_en(CORE_EN),
 	.reset(sreset),
 	.addr_in(c16_addr),
 	.addr_out(ted_addr),

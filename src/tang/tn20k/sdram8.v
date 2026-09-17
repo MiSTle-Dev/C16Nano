@@ -40,6 +40,7 @@ module sdram8 (
     input               reset_n,
 
     output              ready,
+    output              busy,
 
     input      [22:0]   addr,
     input      [7:0]    din,
@@ -84,7 +85,7 @@ always_ff @(posedge clk) begin
     last_refresh <= refresh;
 
     // start a new cycle on rising edge of ce
-    if(ce && !last_ce) q <= 3'd1;
+    if(ce && !last_ce && q == STATE_CMD_START) q <= 3'd1;
     if((q != 3'd0) || (reset != 5'd0)) q <= q + 3'd1;
 end
 
@@ -100,6 +101,7 @@ always_ff @(posedge clk) begin
 end
 
 assign ready = !(|reset);
+assign busy = (q != STATE_CMD_START);
 
 // all possible commands
 localparam CMD_INHIBIT         = 4'b1111;
@@ -167,7 +169,7 @@ always_ff @(posedge clk) begin
         if(refresh && !last_refresh)
             sd_cmd <= CMD_AUTO_REFRESH;
 
-        if(ce && !last_ce) begin
+        if(ce && !last_ce && q == STATE_CMD_START) begin
             sd_cmd  <= CMD_ACTIVE;
             sd_ba   <= addr[22:21];     // bank
             sd_addr <= addr[20:10];     // 11‑bit row address
