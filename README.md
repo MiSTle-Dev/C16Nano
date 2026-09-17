@@ -44,12 +44,16 @@ cat 3-plus-1.317053-01.bin 3-plus-1.317054-01.bin > function.bin
 cat t112003_calc_plus_lo.bin t112003_calc_plus_hi.bin > calc_plus.bin
 ```
 
-### Tape load
+## Tape Image Loader (*.TAP)
 
-Enter 'LOAD'
-and select from OSD a .tap file.  
-Screen will blank 'blue' and after short period the filename will appear for some seconds.  
-Screen will blank 'blue' again till tape file in entirely loaded. It takes time...
+A [Tape](https://en.wikipedia.org/wiki/Commodore_Datasette) *.TAP file can be loaded via OSD file selection.  
+
+> [!IMPORTANT]
+> command: **LOAD**
+
+Then select from OSD a *.tap file.    
+Screen will blank 'blue' and after a short period of time a filename will appear for some seconds.  
+Screen will blank 'blue' again until tape file is entirely loaded. It takes time...
 
 ### Original ReadMe (has outdated and non-related info)
 
