@@ -76,12 +76,12 @@ wire std = (screen == 2'd0);
 // C16 mode table
 //                         start     frame   screen s_start   s_len
 // NTSC
-wire [55:0] htiming0  = { 11'd912, std?11'd720:11'd768, 11'd16, 11'd62 };
+wire [43:0] htiming0  = { 11'd912, std?11'd720:11'd768, 11'd16, 11'd62 };
 wire [39:0] vtiming0  = {         10'd524,  10'd480, 10'd9,  10'd6 };
 wire [7:0] cea0 = 8'd2; // CEA is HDMI mode in group 1
    
 // PAL
-wire [54:0] htiming1  = { 11'd912, std?11'd720:11'd768, 11'd24, 11'd72 };
+wire [43:0] htiming1  = { 11'd912, std?11'd720:11'd768, 11'd24, 11'd72 };
 wire [39:0] vtiming1  = { 10'd624, 10'd576,  10'd5,  10'd5 };
 wire [7:0] cea1 = 8'd17;
    
