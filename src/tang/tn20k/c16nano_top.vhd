@@ -360,6 +360,14 @@ signal load_function   : std_logic := '0';
 signal disk_sd_wr_data : unsigned(7 downto 0);
 signal ext_iec_en      : std_logic_vector(1 downto 0);
 signal int_iec_drv     : std_logic_vector(1 downto 0);
+signal tape_sound      : std_logic;
+signal act             : unsigned(3 downto 0) := (others => '0');
+signal to_cnt          : integer range 0 to 2_000_000 := 0;
+signal start_strk      : std_logic :='0';
+signal key             : std_logic_vector(7 downto 0) := (others => '0');
+signal key_strobe      : std_logic := '0';
+signal kbd_strobe      : std_logic;
+signal run_prg         : std_logic;
 
 type tap_read_state_t is (TAP_IDLE, TAP_GAP, TAP_REQUEST, TAP_WAIT_DATA, TAP_RELEASE);
 signal tap_read_state : tap_read_state_t := TAP_IDLE;
@@ -657,7 +665,7 @@ sd_card_inst: entity work.sd_card
 
 audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
 
-cass_aud <= cass_read and not cass_sense and not cass_motor;
+cass_aud <= cass_read and tape_sound and not cass_sense and not cass_motor;
 audio_l <= (audio_data_l & "00") or (4x"00" & cass_aud & 13x"00000");
 audio_r <= audio_l;
 tape_adc_act <= '0';
@@ -955,6 +963,7 @@ hid_inst: entity work.hid
 
   -- output HID data received from USB
   usb_kbd         => usb_key,
+  kbd_strobe      => kbd_strobe,
   joystick0       => joystick1,
   joystick1       => joystick2,
   numpad          => numpad,
@@ -993,13 +1002,14 @@ hid_inst: entity work.hid
   system_dos_sel      => dos_sel,
   system_1541_reset   => c1541_osd_reset,
   system_model        => model,
-  system_tape_sound   => open,
+  system_tape_sound   => tape_sound,
   system_tv           => tvmode,
   system_uart         => system_uart,
   system_joyswap      => system_joyswap,
   system_detach_reset => detach_reset,
   system_ext_iec_en   => ext_iec_en,
   system_int_iec_drv  => int_iec_drv,
+  system_run_prg      => run_prg,
 
   port_status         => serial_status, -- in
   port_out_available  => serial_tx_available, --in
@@ -1171,7 +1181,7 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	JOY0     => joyB when system_joyswap = '1' else joyA,
 	JOY1     => joyA when system_joyswap = '1' else joyB,
 
-	ps2_key  => "000" & usb_key,
+	ps2_key  => "000" & key,
 	key_play => open,
 
 	sid_type => "00",
@@ -1198,7 +1208,6 @@ xreset <= resetc16 or cart_reset or detach_reset;
   );
 
 process(clk_sys)
-  variable wait_cnt : integer;
 begin
   if rising_edge(clk_sys) then
     ioctl_wr_d <= ioctl_wr;
@@ -1212,20 +1221,16 @@ begin
 
     if resetc16 = '1' then
       dl_wr <= '0';
-      wait_cnt := 0;
       ioctl_wait <= '0';
       prg_finalize <= '0';
       state <= x"0";
     end if;
 
-    if wait_cnt /= 0 then
-      wait_cnt := wait_cnt - 1;
-    elsif wait_cnt = 0 then
-      dl_wr <= '0';
-      ioctl_wait <= '0';
-      if state = x"0" then
-        prg_finalize <= '0';
-      end if;
+    dl_wr <= '0';
+    ioctl_wait <= '0';
+
+    if state = x"0" then
+      prg_finalize <= '0';
     end if;
 
     if ioctl_download = '1' and load_prg = '1' then
@@ -1236,7 +1241,6 @@ begin
         elsif ioctl_addr = 1 then
           addr(15 downto 8) <= ioctl_dout;
         else
-          wait_cnt := 32;
           ioctl_wait <= '1';
           dl_addr <= addr;
           dl_data <= ioctl_dout;
@@ -1246,7 +1250,6 @@ begin
       end if;
     elsif ioctl_download = '1' and (load_crt = '1' or load_function = '1' or load_tap = '1') then
       if ioctl_wr_d = '0' and ioctl_wr = '1' then
-        wait_cnt := 32;
         ioctl_wait <= '1';
         dl_addr <= ioctl_addr(15 downto 0);
         tap_dl_addr <= ioctl_addr;
@@ -1259,27 +1262,23 @@ begin
     end if;
 
     if old_download = '1' and ioctl_download = '0' and load_prg = '1' then
-      state <= x"1"; 
+      state <= x"1";
       prg_finalize <= '1';
     end if;
 
     if state /= x"0" then
-      if state(0) = '1' then
         state <= state + 1;
-      elsif wait_cnt = 0 then
-        state <= state + 1;
-      end if;
     end if;
 
     case(state) is
-      when x"1" => dl_addr <= x"002d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"3" => dl_addr <= x"002e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"5" => dl_addr <= x"002f"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"7" => dl_addr <= x"0030"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"9" => dl_addr <= x"0031"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"B" => dl_addr <= x"0032"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"D" => dl_addr <= x"009d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"F" => dl_addr <= x"009e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
+      when x"1" => dl_addr <= x"002d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; 
+      when x"3" => dl_addr <= x"002e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; 
+      when x"5" => dl_addr <= x"002f"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; 
+      when x"7" => dl_addr <= x"0030"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; 
+      when x"9" => dl_addr <= x"0031"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; 
+      when x"B" => dl_addr <= x"0032"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; 
+      when x"D" => dl_addr <= x"009d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; 
+      when x"F" => dl_addr <= x"009e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; 
       when others =>
      end case;
 
@@ -1501,5 +1500,54 @@ port map (
   osd_play_stop_toggle => tap_autoplay,
   ear_input       => '0'
 );
+
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    if resetc16 = '1' then
+      act <= (others => '0');
+      key <= (others => '0');
+      key_strobe <= kbd_strobe;
+    end if;
+
+    if act /= to_unsigned(0, act'length) then
+      to_cnt <= to_cnt + 1;
+
+      if to_cnt > 1280000 then
+        to_cnt <= 0;
+        act <= act + 1;
+
+        case to_integer(act) is
+          when 1  => key(6 downto 0) <= 7X"15"; -- R
+          when 3  => key(6 downto 0) <= 7X"18"; -- U
+          when 5  => key(6 downto 0) <= 7X"11"; -- N
+          when 7  => key(6 downto 0) <= 7X"28"; -- <RETURN>
+          when 9  => key(7 downto 0) <= (others => '0');
+          when 10 => act <= (others => '0');
+          when others => null;
+        end case;
+
+        key(7) <= not act(0);-- press/release
+
+        if act >= to_unsigned(9, act'length) then
+          key_strobe <= kbd_strobe;
+        else
+          key_strobe <= not key_strobe;
+        end if;
+
+      end if;
+    else
+      to_cnt <= 0;
+      key <= usb_key;
+      key_strobe <= kbd_strobe;
+    end if;
+
+    if (start_strk = '1') and (run_prg = '1') then
+      act <= to_unsigned(1, act'length);
+      key <= (others => '0');
+      key_strobe <= '0';
+    end if;
+  end if;
+end process;
 
 end Behavioral_top;
