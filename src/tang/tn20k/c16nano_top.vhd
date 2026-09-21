@@ -200,41 +200,13 @@ signal hsync_out       : std_logic;
 signal vsync_out       : std_logic;
 signal hblank          : std_logic;
 signal vblank          : std_logic;
-signal key_r1          : std_logic;
-signal key_r2          : std_logic;
-signal key_l1          : std_logic;
-signal key_l2          : std_logic;
-signal key_triangle    : std_logic;
-signal key_square      : std_logic;
-signal key_circle      : std_logic;
-signal key_cross       : std_logic;
-signal key_up          : std_logic;
-signal key_down        : std_logic;
-signal key_left        : std_logic;
-signal key_right       : std_logic;
-signal key_r12         : std_logic;
-signal key_r22         : std_logic;
-signal key_l12         : std_logic;
-signal key_l22         : std_logic;
-signal key_triangle2   : std_logic;
-signal key_square2     : std_logic;
-signal key_circle2     : std_logic;
-signal key_cross2      : std_logic;
-signal key_up2         : std_logic;
-signal key_down2       : std_logic;
-signal key_left2       : std_logic;
-signal key_right2      : std_logic;
 signal audio_div       : unsigned(8 downto 0);
 signal flash_clk       : std_logic;
 attribute syn_keep of flash_clk : signal is 1;
 signal flash_lock      : std_logic;
-signal dcsclksel       : std_logic_vector(3 downto 0);
 signal ioctl_download  : std_logic := '0';
-signal ioctl_load_addr : std_logic_vector(22 downto 0);
-signal ioctl_req_wr    : std_logic := '0';
 signal load_crt        : std_logic := '0';
 signal old_download    : std_logic := '0';
-signal io_cycleD       : std_logic;
 signal ioctl_wr        : std_logic := '0';
 signal ioctl_addr      : std_logic_vector(22 downto 0);
 signal load_prg        : std_logic := '0';
@@ -368,6 +340,8 @@ signal key             : std_logic_vector(7 downto 0) := (others => '0');
 signal key_strobe      : std_logic := '0';
 signal kbd_strobe      : std_logic;
 signal run_prg         : std_logic;
+signal old_meminit     : std_logic := '0';
+signal inj_meminit     : std_logic := '0';
 
 type tap_read_state_t is (TAP_IDLE, TAP_GAP, TAP_REQUEST, TAP_WAIT_DATA, TAP_RELEASE);
 signal tap_read_state : tap_read_state_t := TAP_IDLE;
@@ -1181,7 +1155,7 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	JOY0     => joyB when system_joyswap = '1' else joyA,
 	JOY1     => joyA when system_joyswap = '1' else joyB,
 
-	ps2_key  => "000" & key,
+	ps2_key  => std_logic_vector(key_strobe & "00" & key),
 	key_play => open,
 
 	sid_type => "00",
@@ -1224,6 +1198,8 @@ begin
       ioctl_wait <= '0';
       prg_finalize <= '0';
       state <= x"0";
+      start_strk  <= '0';
+      inj_meminit <= '0';
     end if;
 
     dl_wr <= '0';
@@ -1282,6 +1258,16 @@ begin
       when others =>
      end case;
 
+    if state = x"F" then
+      inj_meminit <= '1';
+    end if;
+
+    if inj_meminit <= '1' and state = x"0" then
+      inj_meminit <= '0';
+    end if;
+
+    old_meminit <= inj_meminit;
+    start_strk  <= '1' when old_meminit = '1' and inj_meminit = '0' else '0';
  end if;
 end process;
 

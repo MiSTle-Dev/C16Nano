@@ -46,19 +46,10 @@ assign rowsel=~row;
 wire       pressed  = ~ps2_key[7];
 wire [6:0] scancode = ps2_key[6:0];
 
-reg [7:0] ukey;
-reg kbd_toggle;
-always @(posedge clk) begin
-    ukey <= ps2_key[7:0];
-	if(ukey != ps2_key[7:0]) begin 
-		kbd_toggle <= ~kbd_toggle; 
-	end
-end
-
 always @(posedge clk) begin
 	reg flg1,flg2;
 
-	flg1 <= kbd_toggle;
+	flg1 <= ps2_key[10];
 	flg2 <= flg1;
 	
 	if(flg2 != flg1) begin

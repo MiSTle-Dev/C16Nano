@@ -122,7 +122,7 @@ always @(posedge clk) begin
       system_detach_reset <= 1'b0;
       system_ext_iec_en <= 2'b00;
       system_int_iec_drv <= 2'b00;
-      system_run_prg <= 1'b0;
+      system_run_prg <= 1'b1;
    end else begin // if (reset)
       //  bring button state into local clock domain
       buttonsD <= buttons;
