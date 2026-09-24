@@ -326,6 +326,10 @@ signal sdram_rom_access : std_logic;
 signal c16_refresh     : std_logic;
 signal core_wait       : std_logic;
 signal refresh         : std_logic;
+signal erase_active    : std_logic := '0';
+signal erase_wr        : std_logic := '0';
+signal erase_addr      : unsigned(15 downto 0) := (others => '0');
+signal detach_reset_d  : std_logic := '0';
 signal spi_intn        : std_logic;
 signal pll_locked_comb : std_logic;
 signal load_function   : std_logic := '0';
@@ -342,9 +346,13 @@ signal kbd_strobe      : std_logic;
 signal run_prg         : std_logic;
 signal old_meminit     : std_logic := '0';
 signal inj_meminit     : std_logic := '0';
+signal fin_wr_busy_seen : std_logic := '0';
 
 type tap_read_state_t is (TAP_IDLE, TAP_GAP, TAP_REQUEST, TAP_WAIT_DATA, TAP_RELEASE);
 signal tap_read_state : tap_read_state_t := TAP_IDLE;
+
+type erase_state_t is (ERASE_IDLE, ERASE_PULSE, ERASE_WAIT_BUSY, ERASE_WAIT_DONE);
+signal erase_state : erase_state_t := ERASE_IDLE;
 
 constant RAM_ADDR      : unsigned(22 downto 0) := 23x"0000000";-- System RAM: 64k
 constant CRT_ADDR      : unsigned(22 downto 0) := 23x"0200000";-- Cartridge ROM
@@ -1338,7 +1346,51 @@ dram_inst: entity work.sdram8
 
   refresh <= '0' when (ioctl_download and (load_prg or load_crt or load_function or load_tap)) = '1' else c16_refresh;
   core_wait <= '1' when ioctl_download = '1' or prg_finalize = '1' or
-                            tap_read_state /= TAP_IDLE else '0';
+                            tap_read_state /= TAP_IDLE or erase_active = '1' else '0';
+
+  process(clk_sys, resetc16)
+  begin
+    if resetc16 = '1' then
+      erase_active <= '0';
+      erase_wr     <= '0';
+      erase_addr   <= (others => '0');
+      erase_state  <= ERASE_IDLE;
+      detach_reset_d <= '0';
+    elsif rising_edge(clk_sys) then
+      detach_reset_d <= detach_reset;
+      erase_wr <= '0';
+
+      case erase_state is
+        when ERASE_IDLE =>
+  --        if detach_reset = '1' then
+  --          erase_active <= '1';
+           erase_active <= '0';
+  --          erase_addr   <= (others => '0');
+  --          erase_state  <= ERASE_PULSE;
+  --        end if;
+
+        when ERASE_PULSE =>
+          erase_wr    <= '1';
+          erase_state <= ERASE_WAIT_BUSY;
+
+        when ERASE_WAIT_BUSY =>
+          if sdram_busy = '1' then
+            erase_state <= ERASE_WAIT_DONE;
+          end if;
+
+        when ERASE_WAIT_DONE =>
+          if sdram_busy = '0' then
+            if erase_addr = unsigned(CRT_ADDR + x"1FFF") then
+              erase_active <= '0';
+              erase_state  <= ERASE_IDLE;
+            else
+              erase_addr  <= erase_addr + 1;
+              erase_state <= ERASE_PULSE;
+            end if;
+          end if;
+      end case;
+    end if;
+  end process;
 
   sdram_rom_access <= '1' when (cs0 = '0' and (roml = 1 or roml = 2)) or
                                (cs1 = '0' and (romh = 1 or romh = 2) and kern = '0') else '0';
@@ -1356,7 +1408,8 @@ dram_inst: entity work.sdram8
 
   tap_wr <= dl_wr and ioctl_download and load_tap;
 
-  sdram_cs <= dl_wr when prg_download_access = '1' else
+  sdram_cs <= erase_wr when erase_active = '1' else
+              dl_wr when prg_download_access = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
               dl_wr when ioctl_download = '1' and load_tap = '1' else
@@ -1365,7 +1418,8 @@ dram_inst: entity work.sdram8
               sdram_rom_access when sdram_rom_access = '1' else
               not cs_ram;
 
-  sdram_wr <= dl_wr when prg_download_access = '1' else
+  sdram_wr <= erase_wr when erase_active = '1' else
+              dl_wr when prg_download_access = '1' else
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
               dl_wr when ioctl_download  = '1'and load_tap = '1' else
@@ -1374,7 +1428,9 @@ dram_inst: entity work.sdram8
               not c16_rnw when sdram_rom_access = '0' else
               '0';
 
-  sdram_addr <= std_logic_vector(TAP_ADDR + unsigned(tap_play_addr))
+  sdram_addr <= std_logic_vector(CRT_ADDR + resize(erase_addr, RAM_ADDR'length))
+                  when erase_active = '1' else
+                std_logic_vector(TAP_ADDR + unsigned(tap_play_addr))
                   when tap_read_state /= TAP_IDLE else
                 std_logic_vector(TAP_ADDR + unsigned(tap_dl_addr))
                   when tap_wr = '1' else
@@ -1399,7 +1455,8 @@ dram_inst: entity work.sdram8
                   when cs0 = '0' and roml = 1 else
                 7x"00" & c16_addr;
 
-  sdram_din <= dl_data when prg_download_access = '1' or
+  sdram_din <= x"00" when erase_active = '1' else
+               dl_data when prg_download_access = '1' or
                                 (ioctl_download = '1' and (load_crt = '1' or load_function = '1' or load_tap = '1')) else
                c16_dout;
 
