@@ -91,7 +91,8 @@ module C16
 	input [7:0]   serial_data_in,
 
 	input         RS232_RX,
-	output        RS232_TX
+	output        RS232_TX,
+	output reg    sreset
 );
 
 assign serial_status_out = 0;
@@ -109,7 +110,7 @@ wire mux,cpuenable;
 wire aec,rdy;
 wire keyboardio;
 wire uartio;
-reg sreset=1'b0;
+//reg sreset=1'b0;
 reg [23:0] resetcounter=24'b0;
 wire irq1;
 wire keyreset;
