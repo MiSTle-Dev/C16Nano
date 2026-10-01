@@ -95,11 +95,6 @@ module C16
 	output reg    sreset
 );
 
-assign serial_status_out = 0;
-assign serial_data_out_available = 0;
-assign serial_data_out = 0;
-assign serial_data_in_free = 0;
-
 wire [15:0] c16_addr;
 wire [15:0] ted_addr;
 wire [15:0] cpu_addr;
@@ -123,7 +118,7 @@ assign kbus[5:4] = kbus_kbd[5:4]; // no joystick line connected here
 assign kbus[6] = kbus_kbd[6] & joy0_sel[4];
 assign kbus[7] = kbus_kbd[7] & joy1_sel[4];
 
-wire irq_n, acia_irq_n, acia_irq;
+wire irq_n, acia_irq_n;
 
 // 8501 CPU
 mos8501 cpu
@@ -131,7 +126,7 @@ mos8501 cpu
 	.clk(CLK28), 
 	.reset(sreset), 
 	.enable(cpuenable && !INWAIT && CORE_EN),
-	.irq_n(irq_n & acia_irq_n), //  & ~acia_irq),
+	.irq_n(irq_n & acia_irq_n),
 	.data_in(c16_data), 
 	.data_out(cpu_data), 
 	.address(cpu_addr),
@@ -225,79 +220,63 @@ mos6529 keyport
 assign keyboardio=(c16_addr[15:4]==12'hfd3);		// as we don't have PLA, keyport is identified here
 assign uartio=(c16_addr[15:4]==12'hfd0); // 6551
 
-reg clk_18432en;
+reg clk_36864en;
 reg  [31:0] clk_cnt_uart;
 wire [31:0] clk_rate = PAL ? 32'd28_375_168 : 32'd28_636_352;
 
 always @(posedge CLK28) begin
 	if(sreset) begin
 		clk_cnt_uart <= 32'd0;
-		clk_18432en <= 1'b0;
+		clk_36864en <= 1'b0;
 	end else begin
-		clk_18432en <= 1'b0;
+		clk_36864en <= 1'b0;
 
 		if(clk_cnt_uart < clk_rate)
-			clk_cnt_uart <= clk_cnt_uart + 32'd1_843_200;
+			clk_cnt_uart <= clk_cnt_uart + 32'd3_686_400;
 		else begin
-			clk_cnt_uart <= clk_cnt_uart - clk_rate + 32'd1_843_200;
-			clk_18432en <= 1'b1;
+			clk_cnt_uart <= clk_cnt_uart - clk_rate + 32'd3_686_400;
+			clk_36864en <= 1'b1;
 		end
 	end
 end
 
-gen_uart_mos_6551 uart
-(
-	.reset(sreset),
-	.clk(CLK28),
-	.clk_en(clk_18432en),
-	.din(c16_data),
-	.dout(uart_data),
-	.rnw(RnW),
-	.irq_n(acia_irq_n),
-	.cs(uartio),
-	.rs(c16_addr[1:0]),
-
-	.cts_n(1'b0),
-	.rx(RS232_RX),
-	.tx(RS232_TX),
-	.dcd_n(1'b0),
-	.dsr_n(1'b0),
-	.dtr_n(),
-	.rts_n()
-);
 
 wire dtr, rts_cts;
+wire [7:0] acia_do;
 
-//glb6551 uart(
-//  .RESET_N(~sreset),
-//  .CLK(CLK28),
-//  .RX_CLK(),
-//  .RX_CLK_IN(clk_18432en),
-//  .XTAL_CLK_IN(clk_18432en),
-//  .PH_2(1'b1),
-//  .DI(c16_data),
-//  .DO(uart_data),
-//  .IRQ(acia_irq),
-//  .CS({1'b0,uartio}),
-//  .RW_N(RnW),
-//  .RS(c16_addr[1:0]),
-//  .TXDATA_OUT(RS232_TX),
-//  .RXDATA_IN(RS232_RX),
-//  .RTS(rts_cts),
-//  .CTS(rts_cts),
-//  .DCD(dtr),
-//  .DTR(dtr),
-//  .DSR(dtr),
+glb6551 uart(
+  .RESET_N(~sreset),
+  .CLK(CLK28),
+  .RX_CLK(),
+  .RX_CLK_IN(1'b0),
+  .XTAL_CLK_IN(clk_36864en),
+  // one strobe per CPU cycle, otherwise FIFO pushes repeat for the whole bus cycle
+  .PH_2(cpuenable && !INWAIT && CORE_EN),
+  .DI(cpu_data),
+  .DO(acia_do),
+  .IRQ(acia_irq_n),
+  .CS({1'b0,uartio}),
+  .RW_N(RnW),
+  .RS(c16_addr[1:0]),
+  .TXDATA_OUT(RS232_TX),
+  .RXDATA_IN(RS232_RX),
+  .RTS(),
+  .CTS(1'b1),
+  .DCD(1'b1),
+  .DTR(),
+  .DSR(1'b1),
 
-//  .serial_status_out(serial_status_out),
-//  .serial_data_out_available(serial_data_out_available),
-//  .serial_strobe_out(serial_strobe_out),
-//  .serial_data_out(serial_data_out),
+  .serial_status_out(serial_status_out),
+  .serial_data_out_available(serial_data_out_available),
+  .serial_strobe_out(serial_strobe_out),
+  .serial_data_out(serial_data_out),
 
-//  .serial_data_in_free(serial_data_in_free),
-//  .serial_strobe_in(serial_strobe_in),
-//  .serial_data_in(serial_data_in)
-//);
+  .serial_data_in_free(serial_data_in_free),
+  .serial_strobe_in(serial_strobe_in),
+  .serial_data_in(serial_data_in)
+);
+
+assign uart_data = (uartio && RnW) ? acia_do : 8'hff;
 
 // C16 additional motherboard functions
 always @(posedge CLK28)	begin	// reset tries to emulate the length of a real reset
