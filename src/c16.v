@@ -220,22 +220,22 @@ mos6529 keyport
 assign keyboardio=(c16_addr[15:4]==12'hfd3);		// as we don't have PLA, keyport is identified here
 assign uartio=(c16_addr[15:4]==12'hfd0); // 6551
 
-reg clk_36864en;
+reg clk_18432en;
 reg  [31:0] clk_cnt_uart;
 wire [31:0] clk_rate = PAL ? 32'd28_375_168 : 32'd28_636_352;
 
 always @(posedge CLK28) begin
 	if(sreset) begin
 		clk_cnt_uart <= 32'd0;
-		clk_36864en <= 1'b0;
+		clk_18432en <= 1'b0;
 	end else begin
-		clk_36864en <= 1'b0;
+		clk_18432en <= 1'b0;
 
 		if(clk_cnt_uart < clk_rate)
-			clk_cnt_uart <= clk_cnt_uart + 32'd3_686_400;
+			clk_cnt_uart <= clk_cnt_uart + 32'd1_843_200;
 		else begin
-			clk_cnt_uart <= clk_cnt_uart - clk_rate + 32'd3_686_400;
-			clk_36864en <= 1'b1;
+			clk_cnt_uart <= clk_cnt_uart - clk_rate + 32'd1_843_200;
+			clk_18432en <= 1'b1;
 		end
 	end
 end
@@ -244,12 +244,14 @@ end
 wire dtr, rts_cts;
 wire [7:0] acia_do;
 
+wire cts, dtr;
+
 glb6551 uart(
   .RESET_N(~sreset),
   .CLK(CLK28),
   .RX_CLK(),
   .RX_CLK_IN(1'b0),
-  .XTAL_CLK_IN(clk_36864en),
+  .XTAL_CLK_IN(clk_18432en),
   // one strobe per CPU cycle, otherwise FIFO pushes repeat for the whole bus cycle
   .PH_2(cpuenable && !INWAIT && CORE_EN),
   .DI(cpu_data),
@@ -260,11 +262,11 @@ glb6551 uart(
   .RS(c16_addr[1:0]),
   .TXDATA_OUT(RS232_TX),
   .RXDATA_IN(RS232_RX),
-  .RTS(),
-  .CTS(1'b1),
-  .DCD(1'b1),
-  .DTR(),
-  .DSR(1'b1),
+  .RTS(cts),
+  .CTS(cts),
+  .DCD(dtr),
+  .DTR(dtr),
+  .DSR(dtr),
 
   .serial_status_out(serial_status_out),
   .serial_data_out_available(serial_data_out_available),

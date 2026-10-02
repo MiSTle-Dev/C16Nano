@@ -43,7 +43,7 @@ wire [7:0] rowsel;
 
 assign rowsel=~row;
 
-wire       pressed  = ~ps2_key[7];
+wire       pressed  = ps2_key[9];
 wire [6:0] scancode = ps2_key[6:0];
 
 always @(posedge clk) begin
