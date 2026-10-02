@@ -85,6 +85,7 @@ wire serial_data_in_full;
 
 wire write = PH_2 && CS==2'b01 && !RW_N && RS==2'b00;
 wire read  = PH_2 && CS==2'b01 &&  RW_N && RS==2'b00;
+wire read_status = PH_2 && CS==2'b01 && RW_N && RS==2'b01;
 
 // --- 6551 output fifo ---
 // filled by the CPU when writing to the uart data register
@@ -123,7 +124,20 @@ wire	   uart_rx_busy;
 // rx fifo. Thus we increment the io_fifo read pointer at the end of
 // the rx_busy phase which is the falling edge of uart_rx_busy
 reg uart_rx_busyD;
-always @(posedge CLK) uart_rx_busyD <= uart_rx_busy;
+reg serial_data_in_availableD;
+reg uart_tx_busyD;
+reg rx_irq_pending;
+reg tx_irq_pending;
+reg ext_irq_pending;
+reg dcdb_latch;
+reg dsrb_latch;
+
+always @(posedge CLK) begin
+	if (!RESET_N || !RESET_X)
+		uart_rx_busyD <= 1'b0;
+	else
+		uart_rx_busyD <= uart_rx_busy;
+end
 wire uart_rx_busy_ends = !uart_rx_busy && uart_rx_busyD;
    
 // --- uart input fifo ---
@@ -140,7 +154,9 @@ io_fifo uart_in_fifo (
 	.out_clk          ( CLK ),
 	.out              ( serial_data_in_cpu ),
 	.out_strobe       ( 1'b0 ),
-	.out_enable       ( !serial_data_in_empty && uart_rx_busy_ends ),
+	.out_enable       ( !serial_data_in_empty &&
+						 (uart_rx_busy_ends ||
+						  (serial_cpu_data_read && !uart_rx_busy && !uart_rx_busyD && CTL_REG[3:0] == 4'h0)) ),
 
 	.space            ( serial_data_in_space ),
 	.used             ( serial_data_in_used ),
@@ -163,22 +179,22 @@ assign serial_status_out = {
 
 // --- export bit rate based on 6551 config ---
 wire [23:0] bitrate = 
-	(CTL_REG[3:0] == 4'hf)?24'd38400:       // 38400 bit/s
-	(CTL_REG[3:0] == 4'he)?24'd19200:       // 19200 bit/s
-	(CTL_REG[3:0] == 4'hd)?24'd9600:        // 9600 bit/s
-	(CTL_REG[3:0] == 4'hc)?24'd7200:        // 7200 bit/s
-	(CTL_REG[3:0] == 4'hb)?24'd4800:        // 4800 bit/s
-	(CTL_REG[3:0] == 4'ha)?24'd3600:        // 3600 bit/s
-	(CTL_REG[3:0] == 4'h9)?24'd2400:        // 2400 bit/s
-	(CTL_REG[3:0] == 4'h8)?24'd1800:        // 1800 bit/s
-	(CTL_REG[3:0] == 4'h7)?24'd1200:        // 1200 bit/s
-	(CTL_REG[3:0] == 4'h6)?24'd600:         // 600 bit/s
-	(CTL_REG[3:0] == 4'h5)?24'd300:         // 300 bit/s
-	(CTL_REG[3:0] == 4'h4)?24'd150:         // 150 bit/s
-	(CTL_REG[3:0] == 4'h3)?24'd134:         // 134 bit/s
-	(CTL_REG[3:0] == 4'h2)?24'd109:         // 109 bit/s
-	(CTL_REG[3:0] == 4'h1)?24'd75:          // 75 bit/s
-	24'd230400;                             // 16 x external clk
+	(CTL_REG[3:0] == 4'hf)?24'd19200:       // 19200 bit/s
+	(CTL_REG[3:0] == 4'he)?24'd9600:        // 9600 bit/s
+	(CTL_REG[3:0] == 4'hd)?24'd7200:        // 7200 bit/s
+	(CTL_REG[3:0] == 4'hc)?24'd4800:        // 4800 bit/s
+	(CTL_REG[3:0] == 4'hb)?24'd3600:        // 3600 bit/s
+	(CTL_REG[3:0] == 4'ha)?24'd2400:        // 2400 bit/s
+	(CTL_REG[3:0] == 4'h9)?24'd1800:        // 1800 bit/s
+	(CTL_REG[3:0] == 4'h8)?24'd1200:        // 1200 bit/s
+	(CTL_REG[3:0] == 4'h7)?24'd600:         // 600 bit/s
+	(CTL_REG[3:0] == 4'h6)?24'd300:         // 300 bit/s
+	(CTL_REG[3:0] == 4'h5)?24'd150:         // 150 bit/s
+	(CTL_REG[3:0] == 4'h4)?24'd134:         // 134.5 bit/s
+	(CTL_REG[3:0] == 4'h3)?24'd110:         // 109.92 bit/s
+	(CTL_REG[3:0] == 4'h2)?24'd75:          // 75 bit/s
+	(CTL_REG[3:0] == 4'h1)?24'd50:          // 50 bit/s
+	24'd230400;                             // external clock mode, bridged as 230400 bit/s
 	
 // timer to simulate the timing behaviour of a serial transmitter by
 // reporting "tx buffer not empty" for about one byte time after each byte
@@ -187,42 +203,29 @@ wire [1:0] parity = 2'h0;
 wire [1:0] stopbits = 2'h0;
 wire [3:0] databits = 4'd8;
 wire [7:0] timerd_set_data =
-	(CTL_REG[3:0] == 4'hf)?8'h01:  // 38400 bit/s
-	(CTL_REG[3:0] == 4'he)?8'h02:  // 19200 bit/s
-	(CTL_REG[3:0] == 4'hd)?8'h04:  // 9600 bit/s
-	(CTL_REG[3:0] == 4'hc)?8'h05:  // 7200 bit/s
-	(CTL_REG[3:0] == 4'hb)?8'h08:  // 4800 bit/s
-	(CTL_REG[3:0] == 4'ha)?8'h0a:  // 3600 bit/s
-	(CTL_REG[3:0] == 4'h9)?8'h10:  // 2400 bit/s
-	(CTL_REG[3:0] == 4'h8)?8'h16:  // 1800 bit/s
-	(CTL_REG[3:0] == 4'h7)?8'h20:  // 1200 bit/s	
-	(CTL_REG[3:0] == 4'h6)?8'h40:  // 600 bit/s
-	(CTL_REG[3:0] == 4'h5)?8'h80:  // 300 bit/s
-	(CTL_REG[3:0] == 4'h4)?8'h40:  // 150 bit/s
-	(CTL_REG[3:0] == 4'h3)?8'h48:  // 134 bit/s
-	(CTL_REG[3:0] == 4'h2)?8'h50:  // 109 bit/s
-	(CTL_REG[3:0] == 4'h1)?8'hBE:  // 75 bit/s
-	8'h01;                         // 16*ext clk, 230400 bit/s
+	(CTL_REG[3:0] == 4'hf)?8'h02:  // 19200 bit/s
+	(CTL_REG[3:0] == 4'he)?8'h04:  // 9600 bit/s
+	(CTL_REG[3:0] == 4'hd)?8'h05:  // 7200 bit/s
+	(CTL_REG[3:0] == 4'hc)?8'h08:  // 4800 bit/s
+	(CTL_REG[3:0] == 4'hb)?8'h0b:  // 3600 bit/s
+	(CTL_REG[3:0] == 4'ha)?8'h10:  // 2400 bit/s
+	(CTL_REG[3:0] == 4'h9)?8'h15:  // 1800 bit/s
+	(CTL_REG[3:0] == 4'h8)?8'h20:  // 1200 bit/s
+	(CTL_REG[3:0] == 4'h7)?8'h40:  // 600 bit/s
+	(CTL_REG[3:0] == 4'h6)?8'h80:  // 300 bit/s
+	(CTL_REG[3:0] == 4'h5)?8'h40:  // 150 bit/s
+	(CTL_REG[3:0] == 4'h4)?8'h47:  // 134.5 bit/s
+	(CTL_REG[3:0] == 4'h3)?8'h57:  // 109.92 bit/s
+	(CTL_REG[3:0] == 4'h2)?8'h80:  // 75 bit/s
+	(CTL_REG[3:0] == 4'h1)?8'hc0:  // 50 bit/s
+	8'h00;                         // external clock mode has no local busy delay
 
-// bps is 3.6864MHz /2/16 prescaler/datavalue. These values are used for byte timing
+// bps is 1.8432MHz /32/prescaler/datavalue. These values are used for byte timing
 // and are thus 10*the bit values (1 start + 8 data + 1 stop)
 wire [10:0] uart_prediv =
-	(CTL_REG[3:0] == 4'hf)?11'd30:  // 38400 bit/s
-	(CTL_REG[3:0] == 4'he)?11'd30:  // 19200 bit/s
-	(CTL_REG[3:0] == 4'hd)?11'd30:  // 9600 bit/s
-	(CTL_REG[3:0] == 4'hc)?11'd30:  // 7200 bit/s
-	(CTL_REG[3:0] == 4'hb)?11'd30:  // 4800 bit/s
-	(CTL_REG[3:0] == 4'ha)?11'd30:  // 3600 bit/s
-	(CTL_REG[3:0] == 4'h9)?11'd30:  // 2400 bit/s
-	(CTL_REG[3:0] == 4'h8)?11'd30:  // 1800 bit/s
-	(CTL_REG[3:0] == 4'h7)?11'd30:  // 1200 bit/s
-	(CTL_REG[3:0] == 4'h6)?11'd30:  // 600 bit/s
-	(CTL_REG[3:0] == 4'h5)?11'd30:  // 300 bit/s
-	(CTL_REG[3:0] == 4'h4)?11'd120: // 150 bit/s
-	(CTL_REG[3:0] == 4'h3)?11'd120: // 134 bit/s
-	(CTL_REG[3:0] == 4'h2)?11'd120: // 109 bit/s
-	(CTL_REG[3:0] == 4'h1)?11'd120: // 75 bit/s
-	11'd30;                         // 16*ext clk, 230400 bit/s
+	(CTL_REG[3:0] == 4'h5 || CTL_REG[3:0] == 4'h4 ||
+	 CTL_REG[3:0] == 4'h3 || CTL_REG[3:0] == 4'h2 ||
+	 CTL_REG[3:0] == 4'h1)?11'd60:11'd15;
 
 reg [15:0]	uart_rx_prediv_cnt;
 reg [15:0]	uart_tx_prediv_cnt;
@@ -235,47 +238,77 @@ assign		uart_rx_busy = uart_rx_delay_cnt != 8'd0;
 wire	   serial_data_in_available = !serial_data_in_empty && !uart_rx_busy && !uart_rx_busyD;
 
 always @(posedge CLK) begin
-   // the timer itself runs at 3.6864 Mhz
-   if(XTAL_CLK_IN) begin
-      if(uart_rx_prediv_cnt != 16'd0)
-	 uart_rx_prediv_cnt <= uart_rx_prediv_cnt - 16'd1;
-      else begin
-	 uart_rx_prediv_cnt <= { uart_prediv-11'd1, 5'b00000 };
-	 if(uart_rx_delay_cnt != 8'd0)
-	   uart_rx_delay_cnt <= uart_rx_delay_cnt - 8'd1;
-      end
-	 
-      if(uart_tx_prediv_cnt != 16'd0)
-	 uart_tx_prediv_cnt <= uart_tx_prediv_cnt - 16'd1;
-      else begin
-	 uart_tx_prediv_cnt <= { uart_prediv-11'd1, 5'b00000 };
-	 if(uart_tx_delay_cnt != 8'd0)
-	   uart_tx_delay_cnt <= uart_tx_delay_cnt - 8'd1;
-      end
-   end
+	if (!RESET_N || !RESET_X) begin
+		uart_rx_prediv_cnt <= 16'd0;
+		uart_tx_prediv_cnt <= 16'd0;
+		uart_rx_delay_cnt <= 8'd0;
+		uart_tx_delay_cnt <= 8'd0;
+	end else begin
+		// XTAL_CLK_IN is a 1.8432 MHz clock enable.
+		if(XTAL_CLK_IN) begin
+			if(uart_rx_prediv_cnt != 16'd0)
+				uart_rx_prediv_cnt <= uart_rx_prediv_cnt - 16'd1;
+			else begin
+				uart_rx_prediv_cnt <= { uart_prediv-11'd1, 5'b11111 };
+				if(uart_rx_delay_cnt != 8'd0)
+					uart_rx_delay_cnt <= uart_rx_delay_cnt - 8'd1;
+			end
 
-	// CPU reads the RX Data Register)
-	if(serial_cpu_data_read && serial_data_in_available) begin
-		uart_rx_delay_cnt <= timerd_set_data;
-		uart_rx_prediv_cnt <= { uart_prediv-11'd1, 5'b00000 };// load predivider with 2*16 the predivider value
+			if(uart_tx_prediv_cnt != 16'd0)
+				uart_tx_prediv_cnt <= uart_tx_prediv_cnt - 16'd1;
+			else begin
+				uart_tx_prediv_cnt <= { uart_prediv-11'd1, 5'b11111 };
+				if(uart_tx_delay_cnt != 8'd0)
+					uart_tx_delay_cnt <= uart_tx_delay_cnt - 8'd1;
+			end
+		end
+
+		if(serial_cpu_data_read && serial_data_in_available) begin
+			uart_rx_delay_cnt <= timerd_set_data;
+			uart_rx_prediv_cnt <= { uart_prediv-11'd1, 5'b11111 };
+		end
+
+		if(write) begin
+			uart_tx_delay_cnt <= timerd_set_data;
+			uart_tx_prediv_cnt <= { uart_prediv-11'd1, 5'b11111 };
+		end
 	end
-
-   // cpu bus write to TX data register
-   if(write) begin
-      // CPU write to TX Data starts the delay counter. The uart transamitter is then
-      // reported busy as long as the counter runs
-      uart_tx_delay_cnt <= timerd_set_data;
-      uart_tx_prediv_cnt <= { uart_prediv-11'd1, 5'b00000 };    // load predivider with 2*16 the predivider value    
-   end
 end
 
-// the cpu reading data clears rx irq. It may raise again immediately if there's more
-// data in the input fifo.
-wire uart_rx_irq = serial_data_in_available;
+always @(posedge CLK) begin
+	if (!RESET_N || !RESET_X) begin
+		serial_data_in_availableD <= 1'b0;
+		uart_tx_busyD <= 1'b0;
+		rx_irq_pending <= 1'b0;
+		tx_irq_pending <= 1'b0;
+		ext_irq_pending <= 1'b0;
+		dcdb_latch <= DCD;
+		dsrb_latch <= DSR;
+	end else begin
+		serial_data_in_availableD <= serial_data_in_available;
+		uart_tx_busyD <= uart_tx_busy;
 
-// the io controller reading data clears tx irq. It may raus again immediately if 
-// there's more data in the output fifo
-wire uart_tx_irq = !serial_data_out_fifo_full && !serial_strobe_out;
+		if (read_status) begin
+			rx_irq_pending <= 1'b0;
+			tx_irq_pending <= 1'b0;
+			ext_irq_pending <= 1'b0;
+			dcdb_latch <= DCD;
+			dsrb_latch <= DSR;
+		end
+
+		if (serial_data_in_available && !serial_data_in_availableD)
+			rx_irq_pending <= 1'b1;
+		if ((uart_tx_busyD && !uart_tx_busy) || (write && timerd_set_data == 8'd0))
+			tx_irq_pending <= 1'b1;
+
+		else if (!ext_irq_pending) begin
+			dcdb_latch <= DCD;
+			dsrb_latch <= DSR;
+			if ((dcdb_latch ^ DCD) || (dsrb_latch ^ DSR))
+				ext_irq_pending <= 1'b1;
+		end
+	end
+end
 
 // 6551 UART
 
@@ -284,8 +317,7 @@ assign RESET_X = RESET_NX 					?	1'b0:
 assign TXDATA_OUT =	1'b1;
 
 assign TDRE = !serial_data_out_fifo_full && !uart_tx_busy;
-assign RDRF = (CMD_REG[1]) ? serial_data_in_available:
-							serial_data_in_available && ~RTS;
+assign RDRF = serial_data_in_available;
 
 assign STATUS_REG = {!IRQ, DSR, DCD, TDRE, RDRF, OVERRUN, FRAME, PARITY};
 assign DO =	(RS == 2'b00)	?	serial_data_in_cpu:
@@ -293,8 +325,9 @@ assign DO =	(RS == 2'b00)	?	serial_data_in_cpu:
 			(RS == 2'b10)	?	CMD_REG:
 								CTL_REG;
 
-assign IRQ =	({CMD_REG[1:0], RDRF} == 3'b011) ? 1'b0:
-				({CMD_REG[3:2], CMD_REG[0], TDRE} == 4'b0111) ?	1'b0:1'b1; // low active
+assign IRQ = ~(ext_irq_pending |
+				(tx_irq_pending && CMD_REG[3:2] == 2'b01) |
+				(rx_irq_pending && !CMD_REG[1]));
 
 assign RTS = (CMD_REG[3:2] == 2'b00);
 assign DTR = ~CMD_REG[0];

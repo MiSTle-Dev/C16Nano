@@ -200,41 +200,13 @@ signal hsync_out       : std_logic;
 signal vsync_out       : std_logic;
 signal hblank          : std_logic;
 signal vblank          : std_logic;
-signal key_r1          : std_logic;
-signal key_r2          : std_logic;
-signal key_l1          : std_logic;
-signal key_l2          : std_logic;
-signal key_triangle    : std_logic;
-signal key_square      : std_logic;
-signal key_circle      : std_logic;
-signal key_cross       : std_logic;
-signal key_up          : std_logic;
-signal key_down        : std_logic;
-signal key_left        : std_logic;
-signal key_right       : std_logic;
-signal key_r12         : std_logic;
-signal key_r22         : std_logic;
-signal key_l12         : std_logic;
-signal key_l22         : std_logic;
-signal key_triangle2   : std_logic;
-signal key_square2     : std_logic;
-signal key_circle2     : std_logic;
-signal key_cross2      : std_logic;
-signal key_up2         : std_logic;
-signal key_down2       : std_logic;
-signal key_left2       : std_logic;
-signal key_right2      : std_logic;
 signal audio_div       : unsigned(8 downto 0);
 signal flash_clk       : std_logic;
 attribute syn_keep of flash_clk : signal is 1;
 signal flash_lock      : std_logic;
-signal dcsclksel       : std_logic_vector(3 downto 0);
 signal ioctl_download  : std_logic := '0';
-signal ioctl_load_addr : std_logic_vector(22 downto 0);
-signal ioctl_req_wr    : std_logic := '0';
 signal load_crt        : std_logic := '0';
 signal old_download    : std_logic := '0';
-signal io_cycleD       : std_logic;
 signal ioctl_wr        : std_logic := '0';
 signal ioctl_addr      : std_logic_vector(22 downto 0);
 signal load_prg        : std_logic := '0';
@@ -292,7 +264,7 @@ signal cart_reset       : std_logic;
 signal cartl            : std_logic;
 signal carth            : std_logic;
 signal old_io_cs        : std_logic;
-signal resetc16         : std_logic;
+signal reset            : std_logic;
 signal int_out_n        : std_logic;
 signal uart_tx_i        : std_logic;
 signal spi_ext          : std_logic := '0';
@@ -300,8 +272,7 @@ signal ioctl_dout       : std_logic_vector(7 downto 0);
 signal tvmode           : std_logic_vector(1 downto 0);
 signal c16_iec_reset_o  : std_logic;
 signal dl_wr            : std_logic;
-signal state            : std_logic_vector(3 downto 0) := "0000";
-signal xreset, xrst     : std_logic;
+signal state            : std_logic_vector(7 downto 0) := x"00";
 signal palmode          : std_logic;
 signal clk32            : std_logic;
 attribute syn_keep of clk32 : signal is 1;
@@ -360,6 +331,28 @@ signal load_function   : std_logic := '0';
 signal disk_sd_wr_data : unsigned(7 downto 0);
 signal ext_iec_en      : std_logic_vector(1 downto 0);
 signal int_iec_drv     : std_logic_vector(1 downto 0);
+signal tape_sound      : std_logic;
+signal act             : unsigned(3 downto 0) := (others => '0');
+signal to_cnt          : integer range 0 to 2_000_000 := 0;
+signal start_strk      : std_logic :='0';
+signal key             : std_logic_vector(7 downto 0) := (others => '0');
+signal key_strobe      : std_logic := '0';
+signal kbd_strobe      : std_logic;
+signal run_prg         : std_logic;
+signal old_meminit     : std_logic := '0';
+signal inj_meminit     : std_logic := '0';
+signal fin_wr_busy_seen: std_logic := '0';
+signal sys_reset       : std_logic := '0';
+signal rom_reset       : std_logic := '0';
+signal prg_reset       : std_logic := '0';
+signal prg_boot        : std_logic := '0';
+signal prg_hold        : std_logic;
+signal dl_active       : std_logic;
+signal sreset          : std_logic;
+
+constant PRG_RESET_CLKS : integer := 28_000;      -- ~1 ms reset pulse
+constant PRG_BOOT_CLKS  : integer := 57_000_000;  -- ~2 s for KERNAL/BASIC cold start
+signal prg_boot_cnt    : integer range 0 to PRG_BOOT_CLKS := 0;
 
 type tap_read_state_t is (TAP_IDLE, TAP_GAP, TAP_REQUEST, TAP_WAIT_DATA, TAP_RELEASE);
 signal tap_read_state : tap_read_state_t := TAP_IDLE;
@@ -471,13 +464,13 @@ begin
 
   io(0) <= 'Z' when ext_iec_en /= "01" or (iec_clk_o = '1' and drive_iec_clk_o = '1') else '0';
   io(1) <= 'Z' when ext_iec_en /= "01" or (iec_data_o = '1' and drive_iec_data_o = '1') else '0';
-  io(2) <= 'Z' when ext_iec_en /= "01" or (xreset = '0' and c1541_osd_reset = '0') else '0';
+  io(2) <= 'Z' when ext_iec_en /= "01" or (reset = '0' and c1541_osd_reset = '0') else '0';
   io(3) <= 'Z' when ext_iec_en /= "01" or iec_atn_o = '1' else '0';
   io(5 downto 4) <= (others => 'Z');
 
   spare(0) <= 'Z' when ext_iec_en /= "10" or (iec_clk_o = '1' and drive_iec_clk_o = '1') else '0';
   spare(1) <= 'Z' when ext_iec_en /= "10" or (iec_data_o = '1' and drive_iec_data_o = '1') else '0';
-  spare(2) <= 'Z' when ext_iec_en /= "10" or (xreset = '0' and c1541_osd_reset = '0') else '0';
+  spare(2) <= 'Z' when ext_iec_en /= "10" or (reset = '0' and c1541_osd_reset = '0') else '0';
   spare(3) <= 'Z' when ext_iec_en /= "10" or iec_atn_o = '1' else '0';
   spare(5 downto 4) <= (others => 'Z');
 
@@ -512,7 +505,7 @@ process(clk_sys)
   variable pause_cnt : integer range 0 to 2147483647;
   begin
   if rising_edge(clk_sys) then
-    if resetc16 = '1' then
+    if reset = '1' then
       disk_pause <= '1';
       pause_cnt := 34000000;
     elsif pause_cnt /= 0 then
@@ -523,33 +516,49 @@ process(clk_sys)
   end if;
 end process;
 
-disk_reset <= '1' when not flash_ready or resetc16 or c16_iec_reset_o or c1541_osd_reset else '0';
+disk_reset <= '1' when not flash_ready or reset or c16_iec_reset_o or c1541_osd_reset else '0';
 
 -- rising edge sd_change triggers detection of new disk
-process(clk_sys, pll_locked)
+process(clk_sys)
   begin
-  if pll_locked = '0' then
-    sd_change <= '0';
-    sd_img_size_d <= (others => '0');
-    disk_chg_trg_d <= '0';
-    img_present <= '0';
-  elsif rising_edge(clk_sys) then
-      sd_img_mounted_d <= sd_img_mounted(0);
-      disk_chg_trg_d <= disk_chg_trg;
+  if rising_edge(clk_sys) then
+      if pll_locked = '0' then
+        sd_change <= '0';
+        disk_g64 <= '0';
+        sd_img_size_d <= (others => '0');
+        disk_chg_trg_d <= '0';
+        img_present <= '0';
+      else
+        sd_img_mounted_d <= sd_img_mounted(0);
+        disk_chg_trg_d <= disk_chg_trg;
+        disk_g64_d <= disk_g64;
 
-      if sd_img_mounted(0) = '1' then
-        img_present <= '0' when sd_img_size = 0 else '1';
-      end if;
+        if sd_img_mounted(0) = '1' then
+          img_present <= '0' when sd_img_size = x"00000000" else '1';
+        end if;
 
-      if sd_img_mounted_d = '0' and sd_img_mounted(0) = '1' then
-        sd_img_size_d <= sd_img_size;
-      end if;
+        if sd_img_mounted_d = '0' and sd_img_mounted(0) = '1' then
+          sd_img_size_d <= sd_img_size;
+        end if;
 
-      if (sd_img_mounted(0) /= sd_img_mounted_d) or
-         (disk_chg_trg_d = '0' and disk_chg_trg = '1') then
-          sd_change  <= '1';
-          else
-          sd_change  <= '0';
+        if (sd_img_mounted(0) /= sd_img_mounted_d) or
+          (disk_chg_trg_d = '0' and disk_chg_trg = '1') then
+            sd_change  <= '1';
+            else
+            sd_change  <= '0';
+        end if;
+
+        if unsigned(sd_img_size_d) >= to_unsigned(333744, sd_img_size_d'length) then  -- g64 disk selected
+          disk_g64 <= '1';
+        else
+          disk_g64 <= '0';
+        end if;
+
+        if (disk_g64 /= disk_g64_d) then
+          c1541_reset  <= '1'; -- reset needed after G64 change
+        else
+          c1541_reset  <= '0';
+        end if;
       end if;
   end if;
 end process;
@@ -568,7 +577,7 @@ port map
     disk_change   => sd_change, 
     disk_mount    => img_present,
     disk_readonly => system_floppy_wprot(0),
-    disk_g64      => '0',
+    disk_g64      => disk_g64,
 
     iec_atn_i     => iec_atn_o,
     iec_data_i    => iec_data_o and ext_iec_data,
@@ -657,7 +666,7 @@ sd_card_inst: entity work.sd_card
 
 audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
 
-cass_aud <= cass_read and not cass_sense and not cass_motor;
+cass_aud <= cass_read and tape_sound and not cass_sense and not cass_motor;
 audio_l <= (audio_data_l & "00") or (4x"00" & cass_aud & 13x"00000");
 audio_r <= audio_l;
 tape_adc_act <= '0';
@@ -955,6 +964,7 @@ hid_inst: entity work.hid
 
   -- output HID data received from USB
   usb_kbd         => usb_key,
+  kbd_strobe      => kbd_strobe,
   joystick0       => joystick1,
   joystick1       => joystick2,
   numpad          => numpad,
@@ -993,13 +1003,14 @@ hid_inst: entity work.hid
   system_dos_sel      => dos_sel,
   system_1541_reset   => c1541_osd_reset,
   system_model        => model,
-  system_tape_sound   => open,
+  system_tape_sound   => tape_sound,
   system_tv           => tvmode,
   system_uart         => system_uart,
   system_joyswap      => system_joyswap,
   system_detach_reset => detach_reset,
   system_ext_iec_en   => ext_iec_en,
   system_int_iec_drv  => int_iec_drv,
+  system_run_prg      => run_prg,
 
   port_status         => serial_status, -- in
   port_out_available  => serial_tx_available, --in
@@ -1072,34 +1083,36 @@ basic_inst: entity work.Gowin_pROM_basic
         ad => c16_addr(13 downto 0)
     );
 
-process(clk_sys, resetc16, detach_reset)
+cart_reset <= model and ioctl_download and load_crt;
+
+process(clk_sys)
 begin
-  if resetc16 = '1' or detach_reset = '1' then
-    cartl <= '0';
-    carth <= '0';
-  elsif rising_edge(clk_sys) then
-    if old_download = '0' and ioctl_download = '1' and load_crt = '1' then
+  if rising_edge(clk_sys) then
+    if sys_reset = '1' then
       cartl <= '0';
       carth <= '0';
-    elsif ioctl_wr = '1' and load_crt = '1' then
-      if ioctl_addr(22 downto 14) = 0 then
+    end if;
+
+    if ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = 0 then
         cartl <= '1';
-      elsif ioctl_addr(22 downto 14) = 1 then
+    elsif ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = 1 then
         carth <= '1';
-      end if;
     end if;
   end if;
 end process;
 
 kern <= '1' when c16_addr(15 downto 8) = x"FC" else '0';
 
-process(clk_sys, xreset)
+process(clk_sys)
 begin
-	if xreset = '1' then
-    romh <= "00";
-    roml <= "00";
-  elsif rising_edge(clk_sys) then
+  if rising_edge(clk_sys) then
 	  old_io_cs <= cs_io;
+
+    if reset = '1' then
+      romh <= "00";
+      roml <= "00";
+    end if;
+
     if model = '1' and old_io_cs = '1' and cs_io = '0' and c16_rnw = '0' and c16_addr(15 downto 4) = 12x"FDD" then 
       romh <= c16_addr(3 downto 2);
       roml <= c16_addr(1 downto 0);
@@ -1131,15 +1144,41 @@ end process;
 openbus_sel <= '1' when c16_addr(15 downto 5) = x"FD" & "111" else '0';
 openbus_data <= c16_datalatch when openbus_sel = '1' else x"ff";
 
-resetc16 <= system_reset(0) or not pll_locked or not flash_lock;
-xrst <= resetc16 or detach_reset;
-xreset <= resetc16 or cart_reset or detach_reset;
+sys_reset <= system_reset(1) or system_reset(0) or not pll_locked or not flash_lock or detach_reset or rom_reset;
+reset <= sys_reset or cart_reset or prg_reset;
+
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    if sys_reset = '1' then
+      prg_reset <= '0';
+      prg_boot <= '0';
+      prg_boot_cnt <= 0;
+    elsif old_download = '0' and ioctl_download = '1' and load_prg = '1' then
+      prg_reset <= '1';
+      prg_boot <= '1';
+      prg_boot_cnt <= 0;
+    elsif prg_boot = '1' then
+      if prg_boot_cnt = PRG_RESET_CLKS then
+        prg_reset <= '0';
+      end if;
+      if prg_boot_cnt = PRG_BOOT_CLKS then
+        prg_boot <= '0';
+      else
+        prg_boot_cnt <= prg_boot_cnt + 1;
+      end if;
+    end if;
+  end if;
+end process;
+
+prg_hold <= prg_boot or (ioctl_download and load_prg and not old_download);
+dl_active <= ioctl_download and not prg_hold;
 
  c16_inst: entity work.c16 
  port map 
  (
 	CLK28    => clk_sys,
-	RESET    => xreset,
+	RESET    => reset,
 	INWAIT   => core_wait,
   CORE_EN  => not core_wait,
 	PAL      => palmode,
@@ -1171,7 +1210,7 @@ xreset <= resetc16 or cart_reset or detach_reset;
 	JOY0     => joyB when system_joyswap = '1' else joyA,
 	JOY1     => joyA when system_joyswap = '1' else joyB,
 
-	ps2_key  => "000" & usb_key,
+	ps2_key  => std_logic_vector(key_strobe & not key(7) & '0' & key), -- [8] - extended, [9] - pressed, [10] - toggles with every press/release
 	key_play => open,
 
 	sid_type => "00",
@@ -1193,50 +1232,42 @@ xreset <= resetc16 or cart_reset or detach_reset;
   serial_strobe_in    => serial_rx_strobe,
   serial_data_in      => serial_rx_data,
 
-  RS232_RX     => uart_rx, -- future 
-  RS232_TX     => open  -- future
+  RS232_RX     => '1', -- future 
+  RS232_TX     => open,  -- future
+  sreset       => sreset
   );
 
 process(clk_sys)
-  variable wait_cnt : integer;
 begin
   if rising_edge(clk_sys) then
     ioctl_wr_d <= ioctl_wr;
     old_download <= ioctl_download;
+    rom_reset <= '0';
 
-    if (system_reset(1) or detach_reset) = '1' then
-      cart_reset <= '0';
-    elsif old_download /= ioctl_download and ((model and (load_crt or load_function)) or load_rom) = '1' then
-      cart_reset <= ioctl_download;
-    end if;
-
-    if resetc16 = '1' then
+    if reset = '1' then
       dl_wr <= '0';
-      wait_cnt := 0;
       ioctl_wait <= '0';
       prg_finalize <= '0';
-      state <= x"0";
+      state <= x"00";
+      start_strk  <= '0';
+      inj_meminit <= '0';
     end if;
 
-    if wait_cnt /= 0 then
-      wait_cnt := wait_cnt - 1;
-    elsif wait_cnt = 0 then
-      dl_wr <= '0';
-      ioctl_wait <= '0';
-      if state = x"0" then
-        prg_finalize <= '0';
-      end if;
+    dl_wr <= '0';
+    ioctl_wait <= '0';
+
+    if state = x"00" then
+      prg_finalize <= '0';
     end if;
 
     if ioctl_download = '1' and load_prg = '1' then
-      state <= x"0";
+      state <= x"00";
       if ioctl_wr_d = '0' and ioctl_wr = '1' then
         if ioctl_addr = 0 then
           addr(7 downto 0) <= ioctl_dout;
         elsif ioctl_addr = 1 then
           addr(15 downto 8) <= ioctl_dout;
         else
-          wait_cnt := 32;
           ioctl_wait <= '1';
           dl_addr <= addr;
           dl_data <= ioctl_dout;
@@ -1246,7 +1277,6 @@ begin
       end if;
     elsif ioctl_download = '1' and (load_crt = '1' or load_function = '1' or load_tap = '1') then
       if ioctl_wr_d = '0' and ioctl_wr = '1' then
-        wait_cnt := 32;
         ioctl_wait <= '1';
         dl_addr <= ioctl_addr(15 downto 0);
         tap_dl_addr <= ioctl_addr;
@@ -1259,37 +1289,52 @@ begin
     end if;
 
     if old_download = '1' and ioctl_download = '0' and load_prg = '1' then
-      state <= x"1"; 
+      state <= x"01";
       prg_finalize <= '1';
     end if;
 
-    if state /= x"0" then
-      if state(0) = '1' then
-        state <= state + 1;
-      elsif wait_cnt = 0 then
-        state <= state + 1;
-      end if;
+    if old_download = '1' and ioctl_download = '0' and load_rom = '1' then
+      rom_reset <= '1';
     end if;
 
-    case(state) is
-      when x"1" => dl_addr <= x"002d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"3" => dl_addr <= x"002e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"5" => dl_addr <= x"002f"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"7" => dl_addr <= x"0030"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"9" => dl_addr <= x"0031"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"B" => dl_addr <= x"0032"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"D" => dl_addr <= x"009d"; dl_data <= addr(7 downto 0); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when x"F" => dl_addr <= x"009e"; dl_data <= addr(15 downto 8); dl_wr <= '1';ioctl_wait <= '1'; wait_cnt := 32;
-      when others =>
-     end case;
+    if state = x"80" then
+      state <= x"00";
+    elsif state /= x"00" then
+      state <= state + 1;
+    end if;
 
+    -- sdram8 needs 8 clk per access, so one pointer write every 16 clk
+    if state(7) = '0' and state(3 downto 0) = x"F" then
+      dl_wr <= '1';
+      case state(6 downto 4) is
+        when "000" => dl_addr <= x"002d"; dl_data <= addr(7 downto 0);
+        when "001" => dl_addr <= x"002e"; dl_data <= addr(15 downto 8);
+        when "010" => dl_addr <= x"002f"; dl_data <= addr(7 downto 0);
+        when "011" => dl_addr <= x"0030"; dl_data <= addr(15 downto 8);
+        when "100" => dl_addr <= x"0031"; dl_data <= addr(7 downto 0);
+        when "101" => dl_addr <= x"0032"; dl_data <= addr(15 downto 8);
+        when "110" => dl_addr <= x"009d"; dl_data <= addr(7 downto 0);
+        when others => dl_addr <= x"009e"; dl_data <= addr(15 downto 8);
+      end case;
+    end if;
+
+    if state = x"7F" then
+      inj_meminit <= '1';
+    end if;
+
+    if inj_meminit = '1' and state = x"00" then
+      inj_meminit <= '0';
+    end if;
+
+    old_meminit <= inj_meminit;
+    start_strk  <= '1' when old_meminit = '1' and inj_meminit = '0' else '0';
  end if;
 end process;
 
 crt_inst : entity work.loader_sd_card
   port map (
     clk               => clk_sys,
-    reset             => resetc16,
+    reset             => std_logic(system_reset(1) or not pll_locked),
   
     sd_lba            => sd_lba,
     sd_rd             => sd_rd,
@@ -1321,7 +1366,7 @@ crt_inst : entity work.loader_sd_card
     ioctl_addr(22 downto 0) => ioctl_addr,
     ioctl_dout        => ioctl_dout,
     ioctl_wr          => ioctl_wr,
-    ioctl_wait        => ioctl_wait
+    ioctl_wait        => ioctl_wait or prg_hold
   );
 
 dram_inst: entity work.sdram8
@@ -1351,9 +1396,10 @@ dram_inst: entity work.sdram8
     we         => sdram_wr
   );
 
-  refresh <= '0' when (ioctl_download and (load_prg or load_crt or load_function or load_tap)) = '1' else c16_refresh;
-  core_wait <= '1' when ioctl_download = '1' or prg_finalize = '1' or
-                            tap_read_state /= TAP_IDLE else '0';
+  refresh <= '0' when (dl_active and (load_prg or load_crt or load_function or load_tap)) = '1' or prg_finalize = '1' else c16_refresh;
+  core_wait <= '1' when dl_active = '1' or 
+                        prg_finalize = '1' or
+                        tap_read_state /= TAP_IDLE else '0';
 
   sdram_rom_access <= '1' when (cs0 = '0' and (roml = 1 or roml = 2)) or
                                (cs1 = '0' and (romh = 1 or romh = 2) and kern = '0') else '0';
@@ -1366,8 +1412,7 @@ dram_inst: entity work.sdram8
                                        dl_addr(15 downto 14) /= "10" and
                                        dl_addr(15 downto 14) /= "11" else '0';
 
-  prg_download_access <= '1' when dl_wr = '1' and
-                                  ((ioctl_download = '1' and load_prg = '1') or prg_finalize = '1') else '0';
+  prg_download_access <= '1' when dl_wr = '1' and ((ioctl_download = '1' and load_prg = '1') or prg_finalize = '1') else '0';
 
   tap_wr <= dl_wr and ioctl_download and load_tap;
 
@@ -1375,7 +1420,7 @@ dram_inst: entity work.sdram8
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
               dl_wr when ioctl_download = '1' and load_tap = '1' else
-              '0' when ioctl_download = '1' else
+              '0' when dl_active = '1' else
               tap_rd when tap_read_state /= TAP_IDLE else
               sdram_rom_access when sdram_rom_access = '1' else
               not cs_ram;
@@ -1384,7 +1429,7 @@ dram_inst: entity work.sdram8
               dl_wr when crt_download_access = '1' else
               dl_wr when function_download_access = '1' else
               dl_wr when ioctl_download  = '1'and load_tap = '1' else
-              '0' when ioctl_download = '1' else
+              '0' when dl_active = '1' else
               '0' when tap_read_state /= TAP_IDLE else
               not c16_rnw when sdram_rom_access = '0' else
               '0';
@@ -1421,7 +1466,7 @@ dram_inst: entity work.sdram8
 --------------- TAP -------------------
 
 tap_download <= ioctl_download and load_tap;
-tap_reset <= '1' when resetc16 = '1' or
+tap_reset <= '1' when reset = '1' or
                       tap_download = '1' or
                       tap_finish = '1' or
                       detach_reset = '1' or
@@ -1501,5 +1546,54 @@ port map (
   osd_play_stop_toggle => tap_autoplay,
   ear_input       => '0'
 );
+
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    if reset = '1' then
+      act <= (others => '0');
+      key <= (others => '0');
+      key_strobe <= kbd_strobe;
+    end if;
+
+    if act /= to_unsigned(0, act'length) then
+      to_cnt <= to_cnt + 1;
+
+      if to_cnt > 1280000 then
+        to_cnt <= 0;
+        act <= act + 1;
+
+        case to_integer(act) is
+          when 1  => key(6 downto 0) <= 7X"15"; -- R
+          when 3  => key(6 downto 0) <= 7X"18"; -- U
+          when 5  => key(6 downto 0) <= 7X"11"; -- N
+          when 7  => key(6 downto 0) <= 7X"28"; -- <RETURN>
+          when 9  => key(7 downto 0) <= (others => '0');
+          when 10 => act <= (others => '0');
+          when others => null;
+        end case;
+
+        key(7) <= not act(0);-- press/release
+
+        if act >= to_unsigned(9, act'length) then
+          key_strobe <= kbd_strobe;
+        else
+          key_strobe <= not key_strobe;
+        end if;
+
+      end if;
+    else
+      to_cnt <= 0;
+      key <= usb_key;
+      key_strobe <= kbd_strobe;
+    end if;
+
+    if start_strk = '1' and run_prg = '1' and sreset = '0' then
+      act <= to_unsigned(1, act'length);
+      key <= (others => '0');
+      key_strobe <= '0';
+    end if;
+  end if;
+end process;
 
 end Behavioral_top;
