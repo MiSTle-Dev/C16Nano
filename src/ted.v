@@ -76,7 +76,7 @@ module ted(
     input wire clk,                       // clk must be 4*dot clk so 28.375152MHz for PAL (1.6*PAL system's clock) and 28.63636 for NTSC (2*NTSC system's clock) 
 	input wire clk_en,
     input wire [15:0] addr_in,
-	input         reset,
+	input wire reset,
     output wire [15:0] addr_out,
     input wire [7:0] data_in,
     output wire [7:0] data_out,
@@ -84,15 +84,13 @@ module ted(
     output wire cpuclk,                   // this is a CPU clock for external real CPU
     output wire [6:0] color,              // 7 bits color code 
     output wire csync,
-	output reg    hblank,
-	output reg    vblank,
+	output reg hblank,
+	output reg vblank,
     output wire irq,
     output wire ba,
     output reg mux,
     output reg ras,
     output reg cas,
-	output reg cs_io,
-	output reg cs_ram,
     output reg cs0,
     output reg cs1,
     output reg aec,
@@ -1370,29 +1368,37 @@ always @(posedge clk) if (clk_en || reset) // Generating RAS, internal CAS and M
 				ras<=1;
 				cas<=1;
 				mux<=1;
-				cs_io<=1;
-				cs_ram<=1;
 				cs0<=1;
 				cs1<=1;
 			end
 	6:		ras<=0;				// RAS goes low 35ns before MUX (20ns on real system)
 	7:	begin
 			mux<=0;				// MUX goes low when double phi changes to high at half double clock cycle, CS0,CS1 changes together with MUX when needed
-			if(io) cs_io<=0;
-			else if(~tedreg) begin
-				cs_ram<=0;
-				if(rw & ((~ramen & ~dotfetch_reg) | (charrom & dotfetch_reg ))) 
+			if(rw)				// CS0,CS1 generation only on read cycles
 				begin	// ROM chip select is controlled by ramen register or by charrom register depending on whether dot data is fetched from bus
-					cs0<=~lowrom;	         // Basic area
-					cs1<=~highrom;          // Kernal area
-					cs_ram<=lowrom|highrom; // RAM
+				if((~ramen & ~dotfetch_reg) | (charrom & dotfetch_reg ))		// ROM chip select is controlled by ramen register or by charrom register depending on whether dot data is fetched from bus
+					begin
+					if(lowrom)	                            // Basic area
+						cs0<=0;
+					if(highrom & ~io & ~tedreg)	            // Kernal area
+						cs1<=0;
 				end
 			end
 		end
-	8:		if (rw & cs0 & cs1 & ~io & ~tedreg)
+	8:		if (rw & cs0 & cs1 & ~io & ~tedreg) // when read cycle, CAS goes low 35ns after MUX (40ns on real system)
+
 				cas<=0;
 	11:	if (~rw & ~io & ~tedreg)							// when write cycle, CAS goes low 160ns after MUX
 				cas<=0;
+
+	default: 					                            // otherwise they don't change
+			begin
+			ras<=ras;
+			mux<=mux;
+			cas<=cas;
+			cs0<=cs0;
+			cs1<=cs1;
+			end
 	endcase
 
 

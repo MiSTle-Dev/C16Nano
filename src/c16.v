@@ -46,17 +46,16 @@ module C16
 	output  [3:0] GREEN,
 	output  [3:0] BLUE,
 
-	output        RAS,
-	output        CAS,
 	output        refresh,
 	output        RnW,
 	output [15:0] ADDR,
 	input   [7:0] DIN,
 	output  [7:0] DOUT,
-	output        CS_RAM,
+	output        MUX,
+	output        RAS,
+	output        CAS,
 	output        CS0,
 	output        CS1,
-	output        CS_IO,
 
 	output        cass_mtr,
 	input         cass_in,
@@ -98,11 +97,13 @@ module C16
 wire [15:0] c16_addr;
 wire [15:0] ted_addr;
 wire [15:0] cpu_addr;
-wire [7:0] c16_data,ted_data,ram_data,cpu_data,port_in,port_out,keyport_data,uart_data;
+wire [7:0] c16_data,ted_data,cpu_data,port_in,port_out,keyport_data,uart_data;
 wire [7:0] keyboard_row,kbus,kbus_kbd;
 wire [6:0] c16_color;
-wire mux,cpuenable;
-wire aec,rdy;
+wire cpuenable;
+wire mux,ras,cas,aec,rdy;
+reg [7:0] c16_datalatch;
+reg [15:0] c16_addrlatch;
 wire keyboardio;
 wire uartio;
 //reg sreset=1'b0;
@@ -130,7 +131,7 @@ mos8501 cpu
 	.data_in(c16_data), 
 	.data_out(cpu_data), 
 	.address(cpu_addr),
-	.gate_in(1'b0),
+	.gate_in(mux),
 	.rw(RnW),// rw=high read, rw=low write
 	.port_in(port_in),
 	.port_out(port_out),
@@ -168,12 +169,10 @@ ted mos8360
 	.irq(irq_n),
 	.ba(rdy),
 	.mux(mux),
-	.ras(RAS),
-	.cas(CAS),
-	.cs_ram(CS_RAM),
+	.ras(ras),
+	.cas(cas),
 	.cs0(CS0),
 	.cs1(CS1),
-	.cs_io(CS_IO),
 	.aec(aec),
 	.k(kbus),
 	.snd(),
@@ -217,7 +216,7 @@ mos6529 keyport
 	.cs(keyboardio)
 );
 
-assign keyboardio=(c16_addr[15:4]==12'hfd3);		// as we don't have PLA, keyport is identified here
+assign keyboardio=(c16_addr[15:4]==12'hfd3); // as we don't have PLA, keyport is identified here
 assign uartio=(c16_addr[15:4]==12'hfd0); // 6551
 
 reg clk_18432en;
@@ -241,10 +240,9 @@ always @(posedge CLK28) begin
 end
 
 
-wire dtr, rts_cts;
+wire dtr;
 wire [7:0] acia_do;
-
-wire cts, dtr;
+wire cts;
 
 glb6551 uart(
   .RESET_N(~sreset),
@@ -294,11 +292,24 @@ always @(posedge CLK28)	begin	// reset tries to emulate the length of a real res
 	end
 end
 
-assign c16_addr=cpu_addr & ted_addr; // C16 address bus
-assign c16_data=cpu_data & ted_data & DIN & keyport_data & uart_data; // C16 data bus
+// address and data bus latching
+assign c16_addr=(~mux)?c16_addrlatch:cpu_addr&ted_addr;			// C16 address bus
+assign c16_data=(mux)?c16_datalatch:cpu_data&ted_data&DIN&keyport_data & uart_data &openbus_data; // C16 data bus
+
+always @(posedge CLK28) begin
+	c16_datalatch<=c16_data;
+	c16_addrlatch<=c16_addr;
+end
+
+// open bus reads for unmapped I/O space ($FDE0-$FDFF)
+wire       openbus_sel = cpu_addr[15:5] == {8'hFD, 3'b111};
+wire [7:0] openbus_data = openbus_sel ? c16_datalatch : 8'hff;
 
 assign ADDR=c16_addr;
 assign DOUT=cpu_data;
+assign MUX=mux;
+assign RAS=ras;
+assign CAS=cas;
 
 assign {port_in[5],port_in[3:0]} = {port_out[5],port_out[3:0]};
 
