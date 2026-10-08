@@ -232,7 +232,6 @@ signal c16_din          : std_logic_vector(7 downto 0);
 signal cs_ram           : std_logic;
 signal cs0              : std_logic;
 signal cs1              : std_logic;
-signal cs_io            : std_logic;
 signal ram_dout         : std_logic_vector(7 downto 0);
 signal ram_dout_i       : std_logic_vector(7 downto 0);
 signal ram_we           : std_logic;
@@ -250,9 +249,6 @@ signal cartl_dout_i     : std_logic_vector(7 downto 0);
 signal carth_dout       : std_logic_vector(7 downto 0);
 signal carth_dout_i     : std_logic_vector(7 downto 0);
 signal cass_dout        : std_logic_vector(7 downto 0);
-signal openbus_data     : std_logic_vector(7 downto 0);
-signal c16_datalatch    : std_logic_vector(7 downto 0);
-signal openbus_sel      : std_logic;
 signal dl_addr          : std_logic_vector(15 downto 0);
 signal tap_dl_addr      : std_logic_vector(22 downto 0);
 signal dl_data          : std_logic_vector(7 downto 0);
@@ -349,6 +345,9 @@ signal prg_boot        : std_logic := '0';
 signal prg_hold        : std_logic;
 signal dl_active       : std_logic;
 signal sreset          : std_logic;
+signal c16_mux         : std_logic;
+signal old_mux         : std_logic;
+signal c16_cas         : std_logic;
 
 constant PRG_RESET_CLKS : integer := 28_000;      -- ~1 ms reset pulse
 constant PRG_BOOT_CLKS  : integer := 57_000_000;  -- ~2 s for KERNAL/BASIC cold start
@@ -1106,25 +1105,27 @@ kern <= '1' when c16_addr(15 downto 8) = x"FC" else '0';
 process(clk_sys)
 begin
   if rising_edge(clk_sys) then
-	  old_io_cs <= cs_io;
+    old_mux <= c16_mux;
 
     if reset = '1' then
       romh <= "00";
       roml <= "00";
     end if;
 
-    if model = '1' and old_io_cs = '1' and cs_io = '0' and c16_rnw = '0' and c16_addr(15 downto 4) = 12x"FDD" then 
+    if model = '1' and old_mux = '1' and c16_mux = '0' and c16_rnw = '0' and c16_addr(15 downto 4) = 12x"FDD" then 
       romh <= c16_addr(3 downto 2);
       roml <= c16_addr(1 downto 0);
     end if;
   end if;
 end process;
 
+cs_ram <= c16_cas or not cs0 or not cs1;
+
 ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
 kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
 basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
 casmatch <= '1' when c16_addr(8 downto 4) /= 5x"11" else '0';
-cass_dout <= "11111" & (cs_io or casmatch or (not tape_adc_act and cass_sense)) & "11";
+cass_dout <= "11111" & (casmatch or (not tape_adc_act and cass_sense)) & "11";
 
 fl_dout <= ram_dout_i when cs0 = '0' and  roml = 2 else x"FF";
 fh_dout <= ram_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
@@ -1132,17 +1133,7 @@ cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
 carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout
-           and fl_dout and fh_dout and cass_dout and openbus_data;
-
-process(all)
-begin
-  if rising_edge(clk_sys) then
-    c16_datalatch <= c16_din;
-  end if;
-end process;
-
-openbus_sel <= '1' when c16_addr(15 downto 5) = x"FD" & "111" else '0';
-openbus_data <= c16_datalatch when openbus_sel = '1' else x"ff";
+           and fl_dout and fh_dout and cass_dout;
 
 sys_reset <= system_reset(1) or system_reset(0) or not pll_locked or not flash_lock or detach_reset or rom_reset;
 reset <= sys_reset or cart_reset or prg_reset;
@@ -1191,16 +1182,15 @@ dl_active <= ioctl_download and not prg_hold;
 	BLUE     => b,
 
 	RAS      => open,
-	CAS      => open,
+	CAS      => c16_cas,
   refresh  => c16_refresh,
 	RnW      => c16_rnw,
 	ADDR     => c16_addr,
 	DOUT     => c16_dout,
 	DIN      => c16_din,
-	CS_RAM   => cs_ram,
+	MUX      => c16_mux,
 	CS0      => cs0,
 	CS1      => cs1,
-	CS_IO    => cs_io,
 
 	cass_mtr => cass_motor,
 	cass_in  => cass_read,
