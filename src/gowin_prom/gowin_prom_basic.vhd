@@ -1,11 +1,12 @@
---Copyright (C)2014-2025 Gowin Semiconductor Corporation.
+--Copyright (C)2014-2026 Gowin Semiconductor Corporation.
 --All rights reserved.
 --File Title: IP file
---Tool Version: V1.9.11.01 (64-bit)
+--Tool Version: V1.9.12.03
+--IP Version: 1.0
 --Part Number: GW5AT-LV60PG484AC1/I0
 --Device: GW5AT-60
 --Device Version: B
---Created Time: Thu May 15 12:11:11 2025
+--Created Time: Sun Oct 11 22:26:48 2026
 
 library IEEE;
 use IEEE.std_logic_1164.all;

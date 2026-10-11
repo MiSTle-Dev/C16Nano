@@ -5,11 +5,9 @@ module video
     parameter bit STEREO = 1'b0
 )
  (
-          input    user,
           input	   clk,
           input    clk_pixel_x5,
           input    pll_lock,
-          input [8:0] audio_div,
 
           input    ntscmode,
           input    vb_in,
@@ -21,8 +19,8 @@ module video
 	      input [3:0]  g_in,
 	      input [3:0]  b_in,
 
-          input [17:0] audio_l,
-          input [17:0] audio_r,
+          input [15:0] audio_l,
+          input [15:0] audio_r,
 
           output osd_status,
 
@@ -33,8 +31,9 @@ module video
 
           // values that can be configure by the user via osd          
           input [1:0]  system_scanlines,
-          input [1:0]  system_volume,
+          input [2:0]  system_volume,
           input [1:0]  system_screen,
+          input        osd_stereo_mix,
 
           // hdmi/tdms
           output	   tmds_clk_n,
@@ -60,23 +59,6 @@ module video
  );
 
 /* -------------------- HDMI video and audio -------------------- */
-
-// generate 48khz audio clock
-reg clk_audio;
-
-reg [8:0] aclk_cnt;
-reg vresetD;
-
-always @(posedge clk) begin
-    // divisor = pixel clock / 48000 / 2 - 1
-    if(aclk_cnt < audio_div)
-        aclk_cnt <= aclk_cnt + 9'd1;
-    else begin
-        aclk_cnt <= 9'd0;
-        clk_audio <= ~clk_audio;
-    end
-end
-
 wire vreset;
 wire [1:0] vmode;
 
@@ -150,43 +132,104 @@ osd_u8g2 osd_u8g2 (
         .osd_status(osd_status)
 );   
 
-wire [2:0] tmds;
-wire tmds_clock;
+// latch audio, so it's stable during 48khz transfer
+reg [15:0] audio_reg [2]; // 16 bit signed audio for HDMI
 
-// Audio c64 core specific
-reg [15:0] alo,aro;
-always @(posedge clk) begin
-	reg [16:0] alm,arm;
+wire signed [15:0] audio_left_s  = $signed(audio_l) >>> 1;
+wire signed [15:0] audio_right_s = $signed(audio_r) >>> 1;
 
-	arm <= {audio_r[17],audio_r[17:2]};
-	alm <= {audio_l[17],audio_l[17:2]};
-	alo <= ^alm[16:15] ? {alm[16], {15{alm[15]}}} : alm[15:0];
-	aro <= ^arm[16:15] ? {arm[16], {15{arm[15]}}} : arm[15:0];
+logic signed [14:0] mixed_audio_left;
+logic signed [14:0] mixed_audio_right;
+logic signed [14:0] scaled_audio_left;
+logic signed [14:0] scaled_audio_right;
+
+always_comb begin
+    if (!osd_stereo_mix) begin
+        mixed_audio_left  = $signed(audio_l) >>> 1;
+        mixed_audio_right = $signed(audio_r) >>> 1;
+    end
+    else begin
+        mixed_audio_left  = (audio_left_s  - (audio_left_s  >>> 2))
+                          + (audio_right_s >>> 2);
+        mixed_audio_right = (audio_right_s - (audio_right_s >>> 2))
+                          + (audio_left_s >>> 2);
+    end
+
+    case (system_volume)
+        3'b100: begin
+            scaled_audio_left  = mixed_audio_left;
+            scaled_audio_right = mixed_audio_right;
+        end
+        3'b011: begin
+            scaled_audio_left  = (mixed_audio_left  >>> 1) + (mixed_audio_left  >>> 2);
+            scaled_audio_right = (mixed_audio_right >>> 1) + (mixed_audio_right >>> 2);
+        end
+        3'b010: begin
+            scaled_audio_left  = mixed_audio_left  >>> 1;
+            scaled_audio_right = mixed_audio_right >>> 1;
+        end
+        3'b001: begin
+            scaled_audio_left  = mixed_audio_left  >>> 2;
+            scaled_audio_right = mixed_audio_right >>> 2;
+        end
+        default: begin
+            scaled_audio_left  = 15'sd0;
+            scaled_audio_right = 15'sd0;
+        end
+    endcase
 end
 
-// scale audio for valume by signed division
-wire [15:0] audio_vol_l = 
-    (system_volume == 2'd0)?16'd0:
-    (system_volume == 2'd1)?{ {2{alo[15]}}, alo[15:2] }:
-    (system_volume == 2'd2)?{ alo[15], alo[15:1] }:
-    alo;
+// Generate the audio clock with a regular divider. HDMI captures samples on
+// the rising edge of clk_audio; samples are updated on its falling edge and
+// remain stable for the following capture.
+logic [8:0] audio_divider;
+logic [8:0] audio_divider_counter;
+logic      clk_audio;
+always_comb begin
+    if (ntscmode)
+        audio_divider = 9'd342; // 343 clk cycles, 32.94 MHz NTSC
+    else
+        audio_divider = 9'd327; // 328 clk cycles, 31.50 MHz PAL
+end
 
-wire [15:0] audio_vol_r = 
-    (system_volume == 2'd0)?16'd0:
-    (system_volume == 2'd1)?{ {2{aro[15]}}, aro[15:2] }:
-    (system_volume == 2'd2)?{ aro[15], aro[15:1] }:
-    aro;
+always @(posedge clk) begin
+    if (!pll_lock) begin
+        audio_divider_counter <= 9'd0;
+        clk_audio <= 1'b0;
+        audio_reg[0] <= 16'd0;
+        audio_reg[1] <= 16'd0;
+    end
+    else if (audio_divider_counter < audio_divider) begin
+        audio_divider_counter <= audio_divider_counter + 9'd1;
+    end
+    else begin
+        audio_divider_counter <= 9'd0;
+        if (clk_audio) begin
+            clk_audio <= 1'b0;
+
+            // Register the processed signed PCM sample for HDMI.
+            audio_reg[0] <= {scaled_audio_left[14], scaled_audio_left[14:0]};
+            audio_reg[1] <= {scaled_audio_right[14], scaled_audio_right[14:0]};
+        end
+        else begin
+            clk_audio <= 1'b1;
+        end
+    end
+end
+
+wire [2:0] tmds;
+wire tmds_clock;
 
 hdmi #(
    .AUDIO_RATE(48000), 
    .AUDIO_BIT_WIDTH(16),
    .VENDOR_NAME( { "MiSTle", 16'd0} ),
-   .PRODUCT_DESCRIPTION( {"C64", 64'd0} )
+   .PRODUCT_DESCRIPTION( {"C64", 104'd0})
 ) hdmi(
   .clk_pixel_x5(clk_pixel_x5),
   .clk_pixel(clk),
   .clk_audio(clk_audio),
-  .audio_sample_word( { audio_vol_l, audio_vol_r } ),
+  .audio_sample_word( audio_reg ),
   .tmds(tmds),
   .tmds_clock(tmds_clock),
 
@@ -205,88 +248,5 @@ ELVDS_OBUF tmds_bufds [3:0] (
         .O({tmds_clk_p, tmds_d_p}),
         .OB({tmds_clk_n, tmds_d_n})
 );
-
-reg i2s_clk;
-reg [7:0] i2s_clk_cnt;
-always @(posedge clk or negedge pll_lock) begin
-    if (~pll_lock) begin
-        i2s_clk_cnt <= 8'd0;
-        i2s_clk <= 1'b0;
-        end
-    else begin
-       if(i2s_clk_cnt < (ntscmode?32940000:31500000) / (24000*32) / 2 - 1)
-            i2s_clk_cnt <= i2s_clk_cnt + 8'd1;
-        else begin
-            i2s_clk_cnt <= 8'd0;
-            i2s_clk <= ~i2s_clk;
-        end
-    end
-end
-
-// sign expand and add both channels
-wire [15:0] audio_mix = { audio_vol_l[14], audio_vol_l} + { audio_vol_r[14], audio_vol_r };
-
-// shift audio down to reduce amp output volume to a sane range
-localparam AUDIO_SHIFT = (STEREO)?2:3;   // 2 TM138k / TM60k and 3 // TN20k
-wire [15:0] audio_scaled = { { AUDIO_SHIFT+1{audio_mix[15]}}, audio_mix[14:AUDIO_SHIFT] };
- 
-// count 32 bits, 16 left and 16 right channel. MAX samples
-// on rising edge
-reg [15:0] audio;
-reg [4:0] audio_bit_cnt;
-always @(posedge i2s_clk) begin
-   if(!pll_lock) audio_bit_cnt <= 5'd0;
-   else          audio_bit_cnt <= audio_bit_cnt + 5'd1;
-    // latch data so it's stable during transmission
-    if(audio_bit_cnt == 5'd31)
-     audio <= audio_scaled;
-end
-
-// generate i2s signals
-assign hp_bck = !i2s_clk;
-assign hp_ws = !pll_lock?1'b0:audio_bit_cnt[4];
-assign hp_din = !pll_lock?1'b0:audio[15-audio_bit_cnt[3:0]];
-assign pa_en = (STEREO)?~pll_lock:pll_lock; // TM138/60k enable amplifier 0=on and 1= off, TN20k vice versa
-
-assign lcd_clk = clk;
-assign lcd_hs_n = sd_hs_n;
-assign lcd_vs_n = sd_vs_n;
-assign lcd_bl = pll_lock;
-assign lcd_r = {osd_r,2'b00};
-assign lcd_g = {osd_g,2'b00};
-assign lcd_b = {osd_b,2'b00};
-
-reg [10:0] hcnt; // max 1136
-reg [9:0] vcnt;  // max 624
-
-// generate lcd de signal
-localparam XNTSC = 11'd1950;
-localparam YNTSC = 10'd984;
-localparam XPAL  = 11'd1880;
-localparam YPAL  = 10'd940;
-
-assign lcd_de = (hcnt < 11'd800) && (vcnt < 10'd480);
-
-// after scandoubler (with dim lines), ste video is 3*6 bits
-// lcd r and b are only 5 bits, so there may be some color
-// offset
-
-always @(posedge clk) begin
-   reg last_vs_n, last_hs_n;
-
-   last_hs_n <= lcd_hs_n;
-
-   // rising edge/end of hsync
-   if(lcd_hs_n && !last_hs_n) begin
-      hcnt <= (ntscmode)?XNTSC:XPAL;
-      
-      last_vs_n <= lcd_vs_n;
-      if(lcd_vs_n && !last_vs_n) begin
-        vcnt <= (ntscmode)?YNTSC:YPAL;
-      end else
-	vcnt <= vcnt + 10'd1;
-   end else
-      hcnt <= hcnt + 11'd1;
-end
 
 endmodule

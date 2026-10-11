@@ -85,7 +85,9 @@ module ted(
     output wire [6:0] color,              // 7 bits color code 
     output wire csync,
 	output reg hblank,
-	output reg vblank,
+	output reg vblank_out,
+	input  wide,
+	output  ce_pix,	
     output wire irq,
     output wire ba,
     output reg mux,
@@ -94,16 +96,17 @@ module ted(
     output reg cs0,
     output reg cs1,
     output reg aec,
-    output wire snd,
+    output  [4:0] snd,
 	output wire signed [15:0] digi_sound,				// 16bit digital sound output for PCM
     input wire [7:0] k,
     output wire cpuenable,                // this TED signals is needed only for FPGA bustiming and FPGA internal cpu. If external CPU is used, it is not needed.
-    output reg pal,                       // pal/ntsc flag (PAL=0 NTSC=1)
-    output wire hsync,                    // horizontal sync for composite video generator or scandoubler
-    output wire vsync,                    // vertical sync for composite video generator or scandoubler
-    output wire burst,                    //	burst enabler signal for composite video generator
-    output wire even,                     // signals even scanlines for PAL encoder
-    output wire data_oe,                   // used for databus OE signal when TED places data on bus (active high)
+	input   [1:0] tvmode,
+    output pal,                       // pal/ntsc flag (PAL=0 NTSC=1)
+    output reg hsync,                    // horizontal sync for composite video generator or scandoubler
+    output reg vsync,                    // vertical sync for composite video generator or scandoubler
+    //output wire burst,                    //	burst enabler signal for composite video generator
+    //output wire even,                     // signals even scanlines for PAL encoder
+    //output wire data_oe,                   // used for databus OE signal when TED places data on bus (active high)
     output wire refresh_o // signals dram refresh cycle
     );
 
@@ -219,8 +222,8 @@ reg inc_vertsub_window=1'b0;							// active for one single clock cycle, signals
 reg inc_vertline_window=1'b0;							// active for one single clock cycle, signals vertical line incrementation point (thus actual increment point is delayed with a single clock cycle)
 
 // horizontal event positions used for the horizontal event decoder. They don't necessarily reflect the values seen in documentation 
-reg hpos_0,hpos_8,hpos_154,hpos_172,hpos_288,hpos_295,hpos_296,hpos_303,hpos_304;
-reg hpos_312,hpos_320,hpos_336,hpos_343,hpos_348,hpos_353,hpos_359,hpos_380,hpos_382;
+reg hpos_0,hpos_1,hpos_8,hpos_154,hpos_172,hpos_288,hpos_295,hpos_296,hpos_303,hpos_304;
+reg hpos_312,hpos_320,hpos_321,hpos_336,hpos_343,hpos_348,hpos_353,hpos_359,hpos_380,hpos_382;
 reg hpos_384,hpos_391,hpos_392,hpos_394,hpos_400,hpos_407,hpos_418,hpos_423,hpos_431,hpos_432,hpos_440;
 
 reg inc_charpos=1'b0;									// signals internal character position register (not user accessible) increment range inside scanline (not same as $FF1A/$FF1B) 
@@ -230,7 +233,7 @@ reg datahold=1'b0;										// signals whether TED should hold its data on the d
 reg VertSubActive=1'b0;									// signals the scanline ranges when Vertsub counter is active
 reg tedwrite_delay=1'b0;								// this signal was needed to emulate a one dot clock delay when TED writes data to its internal registers. Although most probably this delay exist at
 																// all TED register writes, in FPGATED we use it only for hcounter/vcounter and color register writes. This emulates white pixel bug too.
-reg csyncreg=1'b0,vsyncreg=1'b0,equalization=1'b0,eq1=1'b1,eq2=1'b1,hsyncreg=1'b1;		// PAL/NTSC video screen signals
+reg csyncreg=1'b0,palreg=1'b0,equalization=1'b0,eq1=1'b1,eq2=1'b1;		// PAL/NTSC video screen signals
 reg burstreg=1'b0;
 reg [9:0] videocounter=10'b0;							// videocounter is the actual DMA counter.
 reg inc_videocounter=1'b0;								// signals videocounter increment window
@@ -258,7 +261,7 @@ reg dotfetch;											// Signals when TED is fetching pixeldata from databus
 reg dotfetch_reg=1'b0;									// Registered version of dotfetch
 reg [2:0] xscroll_reg=3'b0;							    // Registered version of xscroll register
 reg [2:0] yscroll_reg=3'b0;							    // Registered version of yscroll register
-//reg hblank=1'b0,vblank=1'b0;							// Signals blanking area
+reg vblank=1'b0;										// Signals blanking area
 reg refresh_inc=1'b0;									// Dram refresh counter increment window
 reg stopreg=1'b0;										// This is a latched version of stop register. Latched at single cycle end
 
@@ -313,7 +316,6 @@ initial
 		char_buf[i]=0;
 		attr_buf[i]=0;
 		end
-	pal=1'b0;
 	end
 
 
@@ -331,7 +333,7 @@ assign single_cycle_end=(cycle_end & phi)?1'b1:1'b0;	// high pulse at the end of
 
 always @(posedge clk) if (clk_en || reset) // Counting FPGA clock cycles during double clock. phicounter is mod16 counter, 16*clk=half phi
 	begin
-	phicounter<=phicounter+1;
+	phicounter<=phicounter+1'd1;
 	end
 	
 assign cpuclk = singleclock?phi:dphi;						// Generated CPU clock. Used only when real 8501 CPU is connected to FPGA
@@ -397,7 +399,7 @@ always @(posedge clk) if (clk_en || reset) // refresh counter increment control
 always @(posedge clk) if (clk_en || reset)
 	begin
 		if(single_cycle_end & (refresh_inc|stopreg))
-					refreshcounter<=refreshcounter+1;
+					refreshcounter<=refreshcounter+1'd1;
 		else	if(hpos_431 & (videoline==0|refresh_inc|stopreg))
 			refreshcounter<=8'h00;
 	end
@@ -407,7 +409,7 @@ always @(posedge clk) if (clk_en || reset)
 //-------------------------------------------------------------------------------------------
 
 assign tick8=(phicounter[1:0]==3)?1'b1:1'b0; //8Mhz clock tick for pixelclock. tick8 must activate one fastclk cycle earlier to use it for hcounter 
-
+assign ce_pix = tick8;
 
 always @(posedge clk) if (clk_en || reset)
 	begin
@@ -422,7 +424,7 @@ always @*									//horizontal counter next state logic
 	hcounter_next=hcounter;
 		if (tedlatch & addr_in_reg[5:0]==HSCANPOS)								// $ff1e horizontal counter register write 
 			begin
-				hcounter_next=hcounter+1;
+				hcounter_next=hcounter+1'd1;
 				hcounter_next[8:3]=~data_in_reg[7:2];		// bit 0-2 are not modified by user write to prevent clock phase change
 			end
 		else if (tick8 & ~stopreg)
@@ -430,7 +432,7 @@ always @*									//horizontal counter next state logic
 				if (hcounter==9'd455)
 					hcounter_next=9'd0;
 				else
-					hcounter_next=hcounter+1;
+					hcounter_next=hcounter+1'd1;
 			end
 	end
 
@@ -447,7 +449,7 @@ always @*									//vertical counter next state logic
 				begin
 					if (vcounter==EOS)
 							vcounter_next=0;
-					else	vcounter_next=vcounter+1;
+					else	vcounter_next=vcounter+1'd1;
 				end
 	end
 	
@@ -482,13 +484,13 @@ always @(posedge clk) if (clk_en || reset)
 				timer1_reload[15:8]<=data_in;
 				t1stop<=0;
 			end
-        else if(phicounter==7 && phi==0 && t1stop==0 && stopreg==0)			// decrement or reload timer 1
-		    begin															
-                if(timer1==0)											
-                    timer1<=timer1_reload-1;
-                else
-                    timer1<=timer1-1;
-            end
+		else if(phicounter==7 && ~phi & ~t1stop & ~stopreg)			// decrement or reload timer 1
+			begin															
+			if(timer1==0)											
+				timer1<=timer1_reload-1'd1;
+			else
+				timer1<=timer1-1'd1;
+			end	
 	end
 	
 //---------------------------------------------------------------------------
@@ -509,9 +511,9 @@ always @(posedge clk) if (clk_en || reset)
 				timer2[15:8]<=data_in;
 				t2stop<=0;
 			end
-		else if(phicounter==15 && phi==0 && t2stop==0 && stopreg==0)	  // if not loaded, decrement timer 2 at odd-even cycle border
+		else if(phicounter==15 && ~phi && ~t2stop && ~stopreg)	          // if not loaded, decrement timer 2 at odd-even cycle border
 		    begin
-		        timer2<=timer2-1;
+		        timer2<=timer2-1'd1;
 		    end
 	end
 
@@ -533,7 +535,7 @@ always @(posedge clk) if (clk_en || reset)
 				timer3[15:8]<=data_in;
 				t3stop<=0;
 			end
-		else if(phicounter==7 && phi==1 && t3stop==0 && stopreg==0)     // when not loaded, decrement timer 3 at odd cycle 
+		else if(phicounter==7 && phi && ~t3stop && ~stopreg)           // when not loaded, decrement timer 3 at even cycle
 		    begin
 		        timer3<=timer3-1;
 		    end
@@ -548,7 +550,7 @@ assign irqpos=(phicounter==4 & ~phi)?1'b1:1'b0;
 
 always @(posedge clk) if (clk_en || reset)
 	begin
-	if(resetCnt1Irq)
+	if(reset|resetCnt1Irq)
 		Cnt1Irq<=0;
 	else if(irqpos && timer1==0)
 		Cnt1Irq<=1;
@@ -556,7 +558,7 @@ always @(posedge clk) if (clk_en || reset)
 	
 always @(posedge clk) if (clk_en || reset)
 	begin
-	if(resetCnt2Irq)
+	if(reset|resetCnt2Irq)
 		Cnt2Irq<=0;
 	else if(irqpos && timer2==0)
 		Cnt2Irq<=1;
@@ -564,7 +566,7 @@ always @(posedge clk) if (clk_en || reset)
 
 always @(posedge clk) if (clk_en || reset)
 	begin
-	if(resetCnt3Irq)
+	if(reset|resetCnt3Irq)
 		Cnt3Irq<=0;
 	else if(irqpos && timer3==0) 
 		Cnt3Irq<=1;
@@ -577,7 +579,7 @@ always @(posedge clk) if (clk_en || reset)
 	
 always @(posedge clk) if (clk_en || reset)
 	begin
-	if (resetRasterIrq)
+	if (reset|resetRasterIrq)
 		RasterIrq<=0;
 	else	if (RasterCmp==vcounter)
 		begin
@@ -773,7 +775,7 @@ always @(posedge clk) if (clk_en || reset) // Character Position counter (not us
 		if(hpos_432 & enabledisplay & VertSubActive)   // FIXME this might need delay
 			CharPosition<=CharPosReload;
 		else if(inc_charpos & single_cycle_end)
-			CharPosition<=CharPosition+1;
+			CharPosition<=CharPosition+1'd1;
 		end
 	end
 
@@ -866,7 +868,7 @@ always @(posedge clk) if (clk_en || reset) // videocounter used for attribute an
 		if(hpos_432)
 			videocounter<=videocounter_reload;
 		else if(inc_videocounter & single_cycle_end)					   // increase videocounter at cycle border
-			videocounter<=videocounter+1;
+			videocounter<=videocounter+1'd1;
 		end
 	end
 
@@ -890,7 +892,7 @@ always @(posedge clk) if (clk_en || reset)
 			for(i=1;i<40;i=i+1) begin
 				attr_buf[i]<=attr_buf[i-1];
 				end
-			nextattr<=attr_buf[39];		
+			nextattr<=attr_buf[39];
 			if(((CursorPos==CharPosition) && VertSubActive) || (CursorPos==0 && CharPosition==0))					// cursor position must be checked here 
 				nextcursor<=1;
 			else nextcursor<=0;
@@ -973,7 +975,7 @@ always @(posedge clk) if (clk_en || reset)
 						if (videoline==0)								// ... changes to 7 at line 0 FIXME: between cycle $C8 and $CA
 							VertSubCount<=3'd7;
 						else if(enabledisplay & VertSubActive) 
-							VertSubCount<=VertSubCount+1;				// ... increases between line 0 and 204
+							VertSubCount<=VertSubCount+1'd1;					// ... increases between line 0 and 204
 		end
 
 //---------------------------------------------------------------------------
@@ -991,7 +993,7 @@ always @(posedge clk) if (clk_en || reset)
 	if(tedwrite && addr_in[5:0]==FLASH_VERTSUB)
 			FlashCount[3:0]<=data_in[6:3];
 	else if(videoline==205 & inc_flashcount_window & single_cycle_end)
-			FlashCount<=FlashCount+1;
+			FlashCount<=FlashCount+1'd1;
 	end
 
 //---------------------------------------------------------------------------
@@ -1001,6 +1003,7 @@ always @(posedge clk) if (clk_en || reset)
 always @(hcounter)
 	begin
 	hpos_0=0;
+	hpos_1=0;
 	hpos_8=0;
 	hpos_154=0;
 	hpos_172=0;
@@ -1030,6 +1033,7 @@ always @(hcounter)
 	hpos_432=0;
 	hpos_440=0;
 	case (hcounter)
+				1:      hpos_1=1;
 				455:	hpos_0=1;				// Start of 40 column screen - 1
 				7:		hpos_8=1;				// Start of 38 column screen - 1
 				154:    hpos_154=1;				// Equalization pulse 1 start
@@ -1042,6 +1046,7 @@ always @(hcounter)
 				304:    hpos_304=1;				// End of character window
 				311:	hpos_312=1;				// End of 38 column screen - 1
 				319: 	hpos_320=1;				// End of 40 column screen - 1 
+				321:    hpos_321=1;
 				336:    hpos_336=1;				// Stop refresh singleclock but delayed by 2 cycle (actual stop at 344)
 				343:	hpos_343=1;				// Stop refresh counter increment (344 in real TED)
 				348:	hpos_348=1;				// Flash (blink) counter increment point delayed by 2 cycles (increments at 352)
@@ -1276,26 +1281,27 @@ always @(posedge clk) if (clk_en || reset) // latch pixelcolor and multiplex it 
 //---------------------------------------------------------------------------
 	
 // PAL/NTSC screen constants 
+assign pal = !tvmode ? !palreg : tvmode[0];
 
-assign EOS = (~pal)?9'd311:9'd261;					// End of Screen scanline
-assign VS_START = (~pal)?9'd254:9'd229;			    // Vertical sync start
-assign VS_STOP = (~pal)?9'd257:9'd232; 			    // Vertical sync stop 
-assign EQ_START = (~pal)?9'd251:9'd226;			    // Equalization start
-assign EQ_STOP = (~pal)?9'd260:9'd235;				// Equalization stop
-assign VBLANK_START = (~pal)?9'd251:9'd226; 		// Screen blanking start
-assign VBLANK_STOP = (~pal)?9'd269:9'd244;		    // Screen blanking stop// Composite Sync signal
+assign EOS = pal?9'd311:9'd261;					// End of Screen scanline
+assign VS_START = pal?9'd254:9'd229;			// Vertical sync start
+assign VS_STOP = pal?9'd257:9'd232; 			// Vertical sync stop 
+assign EQ_START = pal?9'd251:9'd226;			// Equalization start
+assign EQ_STOP = pal?9'd260:9'd235;				// Equalization stop
+assign VBLANK_START = pal?9'd251:9'd226; 		// Screen blanking start
+assign VBLANK_STOP = pal?9'd269:9'd244;		// Screen blanking stop// Composite Sync signal
 
 always @(posedge clk) if (clk_en || reset) // composite synchron is either hsync or equalization+vsync
 	begin
-	csyncreg<=(equalization)?(eq1&eq2)^vsyncreg:hsyncreg;
+	csyncreg<=(equalization)?(eq1&eq2)^vsync:hsync;
 	end
 
 always @(posedge clk) if (clk_en || reset) // vsync signal inverts equalization signal
 	begin
 	if (videoline==VS_START && hpos_400)
-		vsyncreg<=1;
+		vsync<=1;
 	else if (videoline==VS_STOP && hpos_400)
-		vsyncreg<=0;
+		vsync<=0;
 	end
 
 always @(posedge clk) if (clk_en || reset) // equalization signal active during actual vsync+equalization window
@@ -1321,18 +1327,21 @@ always @(posedge clk) if (clk_en || reset) // Equalization pulses generated by h
 always @(posedge clk) if (clk_en || reset) //	Horizontal sync pulse (due to original HMOS technology signal change takes 2 pixels long thus these change positions differ from the specification)
 	begin
 	if(hpos_359)
-		hsyncreg<=0;
+		hsync<=0;
 	else if (hpos_391)
-		hsyncreg<=1;
+		hsync<=1;
 	end
 
 always @(posedge clk) if (clk_en || reset) // horizontal blanking zone
 	begin
-	if(hpos_423)										
+	if((wide && hpos_1) || (~wide && hpos_423)) begin										
+		if(videoline==VBLANK_STOP) vblank_out<=0;
 		hblank<=0;
-	else if(hpos_353)							    // in real TED it starts at 352 but slew rate takes 2 pixels. 353 is at halfway. FIXME: Might be initiated at 344.
+	end else if((wide && hpos_321) || (~wide && hpos_353)) begin		// in real TED it starts at 352 but slew rate takes 2 pixels. 353 is at halfway. FIXME: Might be initiated at 344.
+		if(videoline==VBLANK_START) vblank_out<=1;
 		hblank<=1;
 	end
+end
 
 always @(posedge clk) if (clk_en || reset) // vertical blanking zone
 	begin
@@ -1353,10 +1362,8 @@ always @(posedge clk) if (clk_en || reset) // Burst signal generation for compos
 assign blanking=hblank|vblank;
 assign csync=csyncreg;
 assign color=colorreg;
-assign hsync=hsyncreg;
-assign vsync=vsyncreg;
-assign burst=burstreg&~vblank;				        // during vblank period burst signal is supressed
-assign even=videoline[0];					        // signals odd/even lines for external PAL video encoder
+//assign burst=burstreg&~vblank;				        // during vblank period burst signal is supressed
+//assign even=videoline[0];					        // signals odd/even lines for external PAL video encoder
 
 //---------------------------------------------------------------------------
 // Memory Controller
@@ -1364,29 +1371,28 @@ assign even=videoline[0];					        // signals odd/even lines for external PAL
 
 always @(posedge clk) if (clk_en || reset) // Generating RAS, internal CAS and MUX signals based on clk28 cycle numbers. Not 100% precise reproduction of original TED timing but still in dram specifications
 	case (phicounter)			// one clk28 cycle is 35.35ns
-	1:		begin	
-				ras<=1;
-				cas<=1;
-				mux<=1;
-				cs0<=1;
-				cs1<=1;
+	1:		begin
+			ras<=1;
+			cas<=1;
+			mux<=1;
+			cs0<=1;
+			cs1<=1;
 			end
-	6:		ras<=0;				// RAS goes low 35ns before MUX (20ns on real system)
-	7:	begin
+	6: 	ras<=0;				    // RAS goes low 35ns before MUX (20ns on real system)
+	7:		begin
 			mux<=0;				// MUX goes low when double phi changes to high at half double clock cycle, CS0,CS1 changes together with MUX when needed
 			if(rw)				// CS0,CS1 generation only on read cycles
-				begin	// ROM chip select is controlled by ramen register or by charrom register depending on whether dot data is fetched from bus
+				begin
 				if((~ramen & ~dotfetch_reg) | (charrom & dotfetch_reg ))		// ROM chip select is controlled by ramen register or by charrom register depending on whether dot data is fetched from bus
 					begin
 					if(lowrom)	                            // Basic area
 						cs0<=0;
 					if(highrom & ~io & ~tedreg)	            // Kernal area
 						cs1<=0;
+					end
 				end
 			end
-		end
-	8:		if (rw & cs0 & cs1 & ~io & ~tedreg) // when read cycle, CAS goes low 35ns after MUX (40ns on real system)
-
+	8:		if (rw & cs0 & cs1 & ~io & ~tedreg)				// when read cycle, CAS goes low 35ns after MUX (40ns on real system)
 				cas<=0;
 	11:	if (~rw & ~io & ~tedreg)							// when write cycle, CAS goes low 160ns after MUX
 				cas<=0;
@@ -1424,8 +1430,8 @@ always @(posedge clk) if (clk_en || reset)
 			end
 	end
 
-assign charpointer=(inc_videocounter)?((badline2)?data_in:char_buf[39]):0;	
-assign attrpointer=attr_buf[39];
+assign charpointer=(inc_videocounter)?((badline2)?data_in:char_buf[39]):8'd0;	
+//assign attrpointer=attr_buf[39];
 	
 always @*
 	begin
@@ -1477,6 +1483,7 @@ always @(posedge clk) if (clk_en || reset)
 
 always @(posedge clk) if (clk_en || reset)
 	begin
+	if(reset) ramen <= 0;
 	resetRasterIrq<=1'b0;
 	resetLpIrq<=1'b0;
 	resetCnt1Irq<=1'b0;
@@ -1503,7 +1510,7 @@ always @(posedge clk) if (clk_en || reset)
 							end
 				CONTROL2:	// $FF07
 							begin
-							pal<=data_in[6];
+							palreg<=data_in[6];
 							stop<=data_in[5];
 							csel<=data_in[3];
 							reverse_reg<=data_in[7];     // when write happens on non single cycle end then change is delayed in these registers until single cycle end
@@ -1638,7 +1645,7 @@ always @(posedge clk) if (clk_en || reset)
 				CONTROL2:	// $FF07
 							begin
 							dataout_reg[7]<=reverse;
-							dataout_reg[6]<=pal;
+							dataout_reg[6]<=~pal;
 							dataout_reg[5]<=stop;
 							dataout_reg[4]<=mcm;
 							dataout_reg[3]<=csel;
@@ -1747,13 +1754,13 @@ always @(posedge clk) if (clk_en || reset)
 	end
 
 assign data_out=(datahold)?dataout_reg:8'hff;
-assign data_oe=datahold;									// datab buffer OE signal
+//assign data_oe=datahold;									// datab buffer OE signal
 
 //---------------------------------------------------------------------------
 // TED audio generator
 //---------------------------------------------------------------------------
 
-assign snd=(ch1audio&ch1pwm)|(ch2audio&ch2pwm);		    // mixing audio channel signals
+assign snd=(ch1audio ? digivolume : 5'd0)+(ch2audio ? digivolume : 5'd0); // mixing audio channel signals
 reg [15:0] dacvolume;
 
 assign digi_sound=(ch1audio ? dacvolume : 15'd0)+(ch2audio ? dacvolume : 15'd0);
@@ -1761,7 +1768,7 @@ assign digi_sound=(ch1audio ? dacvolume : 15'd0)+(ch2audio ? dacvolume : 15'd0);
 always @(posedge clk) if (clk_en || reset) //	audio cycle counter divides single clock by 4
 	begin
 	if(single_cycle_end)
-		audiocycle<=audiocycle+1;
+		audiocycle<=audiocycle+1'd1;
 	end
 
 assign ch1clk=single_cycle_end&(audiocycle==2'b11);		// Channel1 clock 
@@ -1774,8 +1781,8 @@ always @(posedge clk) if (clk_en || reset)
 	if(ch1clk)
 		begin
 		if((ch1count==10'h3ff) || damode)
-			ch1count<=Ch1Freq+1;
-		else	ch1count<=ch1count+1;
+			ch1count<=Ch1Freq+1'd1;
+		else	ch1count<=ch1count+1'd1;
 		end
 	end
 
@@ -1797,7 +1804,7 @@ always @(posedge clk) if (clk_en || reset) // emulating dynamic latch behaviour 
 	if((~ch1stateclk_prev & ch1stateclk)|watchdog_ch1max)		// reset watchdog timer at channel1 state change or when maximum time reached
 		watchdog_ch1<=0;
 	else if(ch1clk)										// watchdog timer counts with audio clock cycles
-		watchdog_ch1<=watchdog_ch1+1;
+		watchdog_ch1<=watchdog_ch1+1'd1;
 	end
 
 assign watchdog_ch1max=(watchdog_ch1==18'd188416)?1'b1:1'b0;	
@@ -1809,8 +1816,8 @@ always @(posedge clk) if (clk_en || reset)
 	if(ch2clk)
 		begin
 		if((ch2count==10'h3ff) || damode)
-			ch2count<=Ch2Freq+1;
-		else	ch2count<=ch2count+1;
+			ch2count<=Ch2Freq+1'd1;
+		else	ch2count<=ch2count+1'd1;
 		end
 	end
 
@@ -1832,7 +1839,7 @@ always @(posedge clk) if (clk_en || reset) // emulating dynamic latch behaviour 
 	if((~ch2stateclk_prev & ch2stateclk)|watchdog_ch2max)		// reset watchdog timer at channel2 state change or when maximum time reached
 		watchdog_ch2<=0;
 	else if(ch2clk)										// watchdog timer counts with audio clock cycles
-		watchdog_ch2<=watchdog_ch2+1;
+		watchdog_ch2<=watchdog_ch2+1'd1;
 	end
 
 assign watchdog_ch2max=(watchdog_ch2==18'd188416)?1'b1:1'b0;	
@@ -1850,32 +1857,29 @@ always @(posedge clk) if (clk_en || reset)
 			begin
 			noisegen[n]<=noisegen[n-1];
 			end
-		noisegen[0]<=1^noisegen[7]^noisegen[5]^noisegen[4]^noisegen[1];
+		noisegen[0]<=1'b1^noisegen[7]^noisegen[5]^noisegen[4]^noisegen[1];
 		end
 	end
 
 assign noise=(ch2noise)?noisegen[0]:1'b0;		        // noise signal
 
-// D/A converter
-
-always @*								                // volume value conversion to pwmcounter numbers where PWM signal high value starts
+always @*								// volume value conversion to pwmcounter numbers where PWM signal high value starts
 	begin
 	case (volume)
-		0:		digivolume=31;
-		1:		digivolume=30;
-		2:		digivolume=28;
-		3:		digivolume=26;
-		4:		digivolume=24;
-		5:		digivolume=22;
-		6:		digivolume=20;
-		7:		digivolume=18;
-		8:		digivolume=16;
-		default:	digivolume=16;
+				0: digivolume=0;
+				1: digivolume=1;
+				2: digivolume=3;
+				3: digivolume=5;
+				4: digivolume=7;
+				5: digivolume=9;
+				6: digivolume=11;
+				7: digivolume=13;
+		default:	digivolume=15;
 	endcase
 	end
 
-parameter GAIN=2;
-	
+parameter GAIN=1;
+
 always @*								                // volume value conversion for 16bit PCM signal
 	begin
 	case (volume)
@@ -1883,7 +1887,7 @@ always @*								                // volume value conversion for 16bit PCM signal
 		1:		dacvolume=2920>>GAIN;
 		2:		dacvolume=4125>>GAIN;
 		3:		dacvolume=5827>>GAIN;
-		4:    dacvolume=8231>>GAIN;
+		4:		dacvolume=8231>>GAIN;
 		5:		dacvolume=11626>>GAIN;
 		6:		dacvolume=16422>>GAIN;
 		7:		dacvolume=23197>>GAIN;
@@ -1892,32 +1896,4 @@ always @*								                // volume value conversion for 16bit PCM signal
  	endcase
 	end
 
-always @(posedge clk) if (clk_en || reset) // generating PWM pulses for channel1
-	begin
-	if(tick8)
-		begin
-		if(ch1clk)							            // synchronizing channel1 PWM signal to channel1 audio 
-			pwmcounter1<=0;
-		else pwmcounter1<=pwmcounter1+1;
-		
-		if ( pwmcounter1 < digivolume || pwmcounter1=='d31 )		// set pwm signal duty cycle based on modified volume value
-				ch1pwm<=0;
-		else	ch1pwm<=1;
-		end
-	end
-
-always @(posedge clk) if (clk_en || reset) // generating PWM pulses for channel2
-	begin
-	if(tick8)
-		begin
-		if(ch2clk)							            // synchronizing channel2 PWM signal to channel2 audio (it is shifted by 2 single clock cycles compared to channel1)
-			pwmcounter2<=0;
-		else pwmcounter2<=pwmcounter2+1;
-		
-		if ( pwmcounter2 < digivolume || pwmcounter2=='d31 )		// set pwm signal duty cycle based on modified volume value
-				ch2pwm<=0;
-		else	ch2pwm<=1;
-		end
-	end
-	
 endmodule

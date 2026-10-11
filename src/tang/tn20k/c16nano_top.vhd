@@ -82,10 +82,8 @@ attribute syn_keep : integer;
 attribute syn_keep of clk_sys           : signal is 1;
 attribute syn_keep of clk_pixel_x5      : signal is 1;
 
-signal audio_data_l  : std_logic_vector(15 downto 0);
-signal audio_data_r  : std_logic_vector(15 downto 0);
-signal audio_l       : std_logic_vector(17 downto 0);
-signal audio_r       : std_logic_vector(17 downto 0);
+signal audio_l       : std_logic_vector(15 downto 0);
+signal audio_r       : std_logic_vector(15 downto 0);
 signal addr         : std_logic_vector(15 downto 0);
 
 -- IEC
@@ -146,7 +144,7 @@ signal sys_data_out   : std_logic_vector(7 downto 0);
 signal sdc_data_out   : std_logic_vector(7 downto 0);
 signal hid_int        : std_logic;
 signal system_scanlines : std_logic_vector(1 downto 0);
-signal system_volume  : std_logic_vector(1 downto 0);
+signal system_volume  : std_logic_vector(2 downto 0);
 signal joystick1       : std_logic_vector(7 downto 0);
 signal joystick2       : std_logic_vector(7 downto 0);
 signal ws2812_color   : std_logic_vector(23 downto 0);
@@ -307,7 +305,7 @@ signal tap_rd          : std_logic;
 signal dram_data_ready : std_logic;
 signal tap_download_d  : std_logic := '0';
 signal tape_adc_act    : std_logic;
-signal casmatch        : std_logic;
+signal cass_io_sel     : std_logic;
 signal sdram_cs        : std_logic;
 signal sdram_oe        : std_logic;
 signal sdram_wr        : std_logic;
@@ -348,6 +346,14 @@ signal sreset          : std_logic;
 signal c16_mux         : std_logic;
 signal old_mux         : std_logic;
 signal c16_cas         : std_logic;
+signal system_sid_ver : std_logic;
+signal system_sid_digifix : std_logic;
+signal system_sid_card : std_logic;
+signal system_sid_card_mode : std_logic;
+signal system_sid_ports : std_logic;
+signal system_sid_filter : std_logic_vector(2 downto 0);
+signal system_sid_fc_offset : std_logic_vector(2 downto 0);
+signal sid_fc_lr       : std_logic_vector(12 downto 0);
 
 constant PRG_RESET_CLKS : integer := 28_000;      -- ~1 ms reset pulse
 constant PRG_BOOT_CLKS  : integer := 57_000_000;  -- ~2 s for KERNAL/BASIC cold start
@@ -663,11 +669,7 @@ sd_card_inst: entity work.sd_card
     outbyte         => sd_rd_data         -- a byte of sector content
 );
 
-audio_div  <= to_unsigned(342,9) when ntscMode = '1' else to_unsigned(327,9);
-
 cass_aud <= cass_read and tape_sound and not cass_sense and not cass_motor;
-audio_l <= (audio_data_l & "00") or (4x"00" & cass_aud & 13x"00000");
-audio_r <= audio_l;
 tape_adc_act <= '0';
 
 video_inst: entity work.video
@@ -676,13 +678,11 @@ generic map
   STEREO  => false
 )
 port map(
-      user         => '0',
       pll_lock     => pll_locked, 
       clk          => clk_sys,
       clk_pixel_x5 => clk_pixel_x5,
-      audio_div    => audio_div,
       
-      ntscmode  => palmode,
+      ntscmode  => not palmode,
       vb_in     => video_vblank,
       hb_in     => video_hblank,
       hs_in_n   => video_hsync,
@@ -704,6 +704,7 @@ port map(
       system_screen => system_screen,
       system_scanlines => system_scanlines,
       system_volume => system_volume,
+      osd_stereo_mix => '0',
 
       tmds_clk_n => tmds_clk_n,
       tmds_clk_p => tmds_clk_p,
@@ -734,8 +735,8 @@ begin
       fallback_dot_div <= (others => '0');
       if fallback_hcounter = 455 then
         fallback_hcounter <= (others => '0');
-        if (palmode = '0' and fallback_vcounter = 311) or
-           (palmode = '1' and fallback_vcounter = 261) then
+        if (palmode = '1' and fallback_vcounter = 311) or
+           (palmode = '0' and fallback_vcounter = 261) then
           fallback_vcounter <= (others => '0');
         else
           fallback_vcounter <= fallback_vcounter + 1;
@@ -753,7 +754,7 @@ begin
         fallback_hcounter <= to_unsigned(359, fallback_hcounter'length);
       end if;
       if fallback_vsync_d = '0' and vsync = '1' then
-        if palmode = '0' then
+        if palmode = '1' then
           fallback_vcounter <= to_unsigned(254, fallback_vcounter'length);
         else
           fallback_vcounter <= to_unsigned(229, fallback_vcounter'length);
@@ -770,12 +771,12 @@ video_hsync <= '0' when fallback_active = '1' and fallback_hcounter >= 359 and f
 video_hblank <= '1' when fallback_active = '1' and fallback_hcounter >= 353 and fallback_hcounter < 423 else
                 '0' when fallback_active = '1' else hblank;
 video_vsync <= '1' when fallback_active = '1' and
-                        ((palmode = '0' and fallback_vcounter >= 254 and fallback_vcounter < 257) or
-                         (palmode = '1' and fallback_vcounter >= 229 and fallback_vcounter < 232)) else
+                        ((palmode = '1' and fallback_vcounter >= 254 and fallback_vcounter < 257) or
+                         (palmode = '0' and fallback_vcounter >= 229 and fallback_vcounter < 232)) else
                '0' when fallback_active = '1' else vsync;
 video_vblank <= '1' when fallback_active = '1' and
-                         ((palmode = '0' and fallback_vcounter >= 251 and fallback_vcounter < 269) or
-                          (palmode = '1' and fallback_vcounter >= 226 and fallback_vcounter < 244)) else
+                         ((palmode = '1' and fallback_vcounter >= 251 and fallback_vcounter < 269) or
+                          (palmode = '0' and fallback_vcounter >= 226 and fallback_vcounter < 244)) else
                 '0' when fallback_active = '1' else vblank;
 video_r <= x"0" when fallback_active = '1' else r;
 video_g <= x"0" when fallback_active = '1' else g;
@@ -1010,14 +1011,21 @@ hid_inst: entity work.hid
   system_ext_iec_en   => ext_iec_en,
   system_int_iec_drv  => int_iec_drv,
   system_run_prg      => run_prg,
+  system_sid_ver      => system_sid_ver,
+  system_sid_digifix  => system_sid_digifix,
+  system_sid_card     => system_sid_card,
+  system_sid_card_mode=> system_sid_card_mode,
+  system_sid_ports    => system_sid_ports,
+  system_sid_filter   => system_sid_filter,
+  system_sid_fc_offset=> system_sid_fc_offset,
 
-  port_status         => serial_status, -- in
-  port_out_available  => serial_tx_available, --in
-  port_out_strobe     => serial_tx_strobe, -- out
-  port_out_data       => serial_tx_data, --in
-  port_in_available   => serial_rx_available, -- in
-  port_in_strobe      => serial_rx_strobe, -- out
-  port_in_data        => serial_rx_data, -- out
+  port_status         => serial_status,
+  port_out_available  => serial_tx_available,
+  port_out_strobe     => serial_tx_strobe,
+  port_out_data       => serial_tx_data,
+  port_in_available   => serial_rx_available,
+  port_in_strobe      => serial_rx_strobe,
+  port_in_data        => serial_rx_data,
 
   int_out_n           => spi_intn,
   int_in              => unsigned'(x"0" & sdc_int & '0' & hid_int & '0'),
@@ -1094,7 +1102,9 @@ begin
 
     if ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = 0 then
         cartl <= '1';
-    elsif ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = 1 then
+    end if;
+
+    if ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = 1 then
         carth <= '1';
     end if;
   end if;
@@ -1110,22 +1120,23 @@ begin
     if reset = '1' then
       romh <= "00";
       roml <= "00";
-    end if;
-
-    if model = '1' and old_mux = '1' and c16_mux = '0' and c16_rnw = '0' and c16_addr(15 downto 4) = 12x"FDD" then 
-      romh <= c16_addr(3 downto 2);
-      roml <= c16_addr(1 downto 0);
+    elsif model = '1' and 
+      old_mux = '1' and
+      c16_mux = '0' and 
+      c16_rnw = '0' and
+      c16_addr(15 downto 4) = 12x"FDD" then
+        romh <= c16_addr(3 downto 2);
+        roml <= c16_addr(1 downto 0);
     end if;
   end if;
 end process;
 
-cs_ram <= c16_cas or not cs0 or not cs1;
-
-ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
+cs_ram <= not c16_cas and cs0 and cs1;
+ram_dout <= ram_dout_i when cs_ram = '1' else x"FF";
 kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
 basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
-casmatch <= '1' when c16_addr(8 downto 4) /= 5x"11" else '0';
-cass_dout <= "11111" & (casmatch or (not tape_adc_act and cass_sense)) & "11";
+cass_io_sel <= '1' when c16_addr(15 downto 4) = x"FD1" else '0';
+cass_dout <= "11111" & (not cass_io_sel or (not tape_adc_act and cass_sense)) & "11";
 
 fl_dout <= ram_dout_i when cs0 = '0' and  roml = 2 else x"FF";
 fh_dout <= ram_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
@@ -1165,6 +1176,8 @@ end process;
 prg_hold <= prg_boot or (ioctl_download and load_prg and not old_download);
 dl_active <= ioctl_download and not prg_hold;
 
+sid_fc_lr <= std_logic_vector(to_unsigned(16#600#, sid_fc_lr'length) - unsigned("000" & system_sid_fc_offset & "0000000")) when system_sid_filter(2) = '1' else (others => '0');
+
  c16_inst: entity work.c16 
  port map 
  (
@@ -1180,6 +1193,8 @@ dl_active <= ioctl_download and not prg_hold;
 	RED      => r,
 	GREEN    => g,
 	BLUE     => b,
+  wide     => '0',
+  tvmode   => tvmode,
 
 	RAS      => open,
 	CAS      => c16_cas,
@@ -1204,7 +1219,6 @@ dl_active <= ioctl_download and not prg_hold;
 	key_play => open,
 
 	sid_type => "00",
-	sound    => audio_data_l,
 
   IEC_DATAIN   => drive_iec_data,
   IEC_CLKIN    => drive_iec_clk,
@@ -1224,7 +1238,22 @@ dl_active <= ioctl_download and not prg_hold;
 
   RS232_RX     => '1', -- future 
   RS232_TX     => open,  -- future
-  sreset       => sreset
+  sreset       => sreset,
+
+	audio_l => audio_l,
+	audio_r => audio_r,
+	sid_enabled => system_sid_card, --  status[13]
+	sid_ver     => std_logic_vector'(system_sid_ver & system_sid_ver),
+	sid_cfg     => std_logic_vector'(system_sid_filter(1 downto 0)&system_sid_filter(1 downto 0)),
+	sid_filter  => "11",
+	sid_fc_off_l => sid_fc_lr,
+	sid_fc_off_r => sid_fc_lr,
+	sid_digifix => system_sid_digifix,
+	sid_mode    => system_sid_ports,
+	sid_c64     => system_sid_card_mode,
+	sid_ld_addr => (others => '0'),
+	sid_ld_data => (others => '0'),
+	sid_ld_wr   => '0'
   );
 
 process(clk_sys)
@@ -1349,7 +1378,7 @@ crt_inst : entity work.loader_sd_card
     load_rom          => load_rom,
     load_tap          => load_tap,
     load_flt          => load_function,
-    load_reu          => open,
+    load_reu          => open, -- sid filter load
     sd_img_size       => sd_img_size(31 downto 0),
   
     ioctl_download    => ioctl_download,
@@ -1413,7 +1442,7 @@ dram_inst: entity work.sdram8
               '0' when dl_active = '1' else
               tap_rd when tap_read_state /= TAP_IDLE else
               sdram_rom_access when sdram_rom_access = '1' else
-              not cs_ram;
+              cs_ram;
 
   sdram_wr <= dl_wr when prg_download_access = '1' else
               dl_wr when crt_download_access = '1' else

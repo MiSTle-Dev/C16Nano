@@ -58,6 +58,13 @@ add_file src/tang/tn20k/sdram8.v
 add_file src/tang/tn20k/c16nano_top.vhd
 add_file src/tang/tn20k/c16nano.cst
 add_file src/tang/tn20k/c16nano.sdc
+add_file src/sid_card.v
+add_file src/sid/sid_dac.sv
+add_file src/sid/sid_envelope.sv
+add_file src/sid/sid_filter.sv
+add_file src/sid/sid_tables.sv
+add_file src/sid/sid_top.sv
+add_file src/sid/sid_voice.sv
 
 set_option -synthesis_tool gowinsynthesis
 set_option -output_base_name C16Nano_TN20k
