@@ -354,6 +354,10 @@ signal system_sid_ports : std_logic;
 signal system_sid_filter : std_logic_vector(2 downto 0);
 signal system_sid_fc_offset : std_logic_vector(2 downto 0);
 signal sid_fc_lr       : std_logic_vector(12 downto 0);
+signal sid_ld_addr     : std_logic_vector(11 downto 0) := (others =>'0');
+signal sid_ld_data     : std_logic_vector(15 downto 0) := (others =>'0');
+signal sid_ld_wr       : std_logic := '0';
+signal load_flt       : std_logic := '0';
 
 constant PRG_RESET_CLKS : integer := 28_000;      -- ~1 ms reset pulse
 constant PRG_BOOT_CLKS  : integer := 57_000_000;  -- ~2 s for KERNAL/BASIC cold start
@@ -1100,11 +1104,11 @@ begin
       carth <= '0';
     end if;
 
-    if ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = 0 then
+    if ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = "000000000" then
         cartl <= '1';
     end if;
 
-    if ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = 1 then
+    if ioctl_wr = '1' and load_crt = '1' and ioctl_addr(22 downto 14) = "000000001" then
         carth <= '1';
     end if;
   end if;
@@ -1133,15 +1137,15 @@ end process;
 
 cs_ram <= not c16_cas and cs0 and cs1;
 ram_dout <= ram_dout_i when cs_ram = '1' else x"FF";
-kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
-basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
-cass_io_sel <= '1' when c16_addr(15 downto 4) = x"FD1" else '0';
+kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = "00" or kern = '1') else x"FF";
+basic_dout <= basic_dout_i when cs0 = '0' and  roml = "00" else x"FF";
+cass_io_sel <= '1' when c16_addr(15 downto 4) = 12x"FD1" else '0';
 cass_dout <= "11111" & (not cass_io_sel or (not tape_adc_act and cass_sense)) & "11";
 
-fl_dout <= ram_dout_i when cs0 = '0' and  roml = 2 else x"FF";
-fh_dout <= ram_dout_i when cs1 = '0' and  romh = 2 and kern = '0' else x"FF";
-cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
-carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
+fl_dout <= ram_dout_i when cs0 = '0' and roml = "10" else x"FF";
+fh_dout <= ram_dout_i when cs1 = '0' and romh = "10" and kern = '0' else x"FF";
+cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = "01" else x"FF";
+carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = "01" and kern = '0' else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout
            and fl_dout and fh_dout and cass_dout;
@@ -1251,10 +1255,26 @@ sid_fc_lr <= std_logic_vector(to_unsigned(16#600#, sid_fc_lr'length) - unsigned(
 	sid_digifix => system_sid_digifix,
 	sid_mode    => system_sid_ports,
 	sid_c64     => system_sid_card_mode,
-	sid_ld_addr => (others => '0'),
-	sid_ld_data => (others => '0'),
-	sid_ld_wr   => '0'
+  sid_ld_addr  => sid_ld_addr,
+  sid_ld_data  => sid_ld_data,
+  sid_ld_wr    => sid_ld_wr
   );
+
+process(clk_sys)
+begin
+  if rising_edge(clk_sys) then
+    sid_ld_wr <= '0';
+    if ioctl_wr = '1' and load_flt = '1' and unsigned(ioctl_addr) < to_unsigned(6144, ioctl_addr'length) then
+        if ioctl_addr(0) = '1' then
+          sid_ld_data(15 downto 8) <= std_logic_vector(ioctl_dout);
+          sid_ld_addr <= std_logic_vector(ioctl_addr(12 downto 1));
+          sid_ld_wr <= '1';
+        else
+          sid_ld_data(7 downto 0) <= std_logic_vector(ioctl_dout);
+        end if;
+    end if;
+	end if;
+end process;
 
 process(clk_sys)
 begin
@@ -1378,7 +1398,7 @@ crt_inst : entity work.loader_sd_card
     load_rom          => load_rom,
     load_tap          => load_tap,
     load_flt          => load_function,
-    load_reu          => open, -- sid filter load
+    load_reu          => load_flt,
     sd_img_size       => sd_img_size(31 downto 0),
   
     ioctl_download    => ioctl_download,

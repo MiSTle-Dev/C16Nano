@@ -185,6 +185,7 @@
       <fileselector label="BIN KERNAL:" ext="bin" index="3"/>
       <fileselector label="TAP TAPE:" ext="tap" index="4"/> 
       <fileselector label="Function ROM:" ext="bin" index="5"/>
+      <fileselector label="FLT FILTER:" ext="flt" index="6"/>
       <list label="Disk prot.:" id="P" default="0">
 	<listentry label="None" value="0"/>
 	<listentry label="8:" value="1"/>
