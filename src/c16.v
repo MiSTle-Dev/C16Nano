@@ -30,7 +30,9 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module C16
+module C16 #(
+	parameter DEBUG = 1'b0
+)
 (
 	input         CLK28,
 	input         RESET,
@@ -109,13 +111,16 @@ module C16
 
 	input  [11:0] sid_ld_addr,
 	input  [15:0] sid_ld_data,
-	input         sid_ld_wr
+	input         sid_ld_wr,
+
+	input  [7:0]  userport_in,
+	output [7:0]  userport_out
 );
 
 wire [15:0] c16_addr;
 wire [15:0] ted_addr;
 wire [15:0] cpu_addr;
-wire [7:0] c16_data,ted_data,cpu_data,port_in,port_out,keyport_data,uart_data;
+wire [7:0] c16_data,ted_data,cpu_data,port_in,port_out,keyport_data,uart_data, userport_data;
 wire [7:0] keyboard_row,kbus,kbus_kbd;
 wire [6:0] c16_color;
 wire cpuenable;
@@ -124,6 +129,7 @@ reg [7:0] c16_datalatch;
 reg [15:0] c16_addrlatch;
 wire keyboardio;
 wire uartio;
+wire userportio;
 //reg sreset=1'b0;
 reg [23:0] resetcounter=24'b0;
 wire irq1;
@@ -311,6 +317,9 @@ c16_keymatrix keyboard
 	.kbus(kbus_kbd)
 );
 
+generate
+	if (!DEBUG) begin : uart
+
 mos6529 keyport
 (
 	.clk(CLK28),
@@ -322,8 +331,52 @@ mos6529 keyport
 	.cs(keyboardio)
 );
 
+mos6529 userport
+(
+	.clk(CLK28),
+	.data_in(c16_data),
+	.data_out(userport_data),
+	.port_in(userport_in),
+	.port_out(userport_out),
+	.rw(RnW),
+	.cs(userportio)
+);
+
+	end else begin : debug_uart
+
+wire [7:0] user_loopback;
+
+mos6529 userport
+(
+	.clk(CLK28),
+	.data_in(c16_data),
+	.data_out(userport_data),
+	.port_in(user_loopback),
+	.port_out(userport_out),
+	.rw(RnW),
+	.cs(userportio)
+);
+assign user_loopback = userport_out;
+
+wire [7:0] key_loopback;
+
+mos6529 keyport
+(
+	.clk(CLK28),
+	.data_in(c16_data),
+	.data_out(keyport_data),
+	.port_in(key_loopback),	
+	.port_out(keyboard_row),
+	.rw(RnW),
+	.cs(keyboardio)
+);
+assign key_loopback = keyboard_row;
+	end
+endgenerate
+
 assign keyboardio=(c16_addr[15:4]==12'hfd3); // as we don't have PLA, keyport is identified here
 assign uartio=(c16_addr[15:4]==12'hfd0); // 6551
+assign userportio=(c16_addr[15:4]==12'hfd1); // user port
 
 reg clk_18432en;
 reg  [31:0] clk_cnt_uart;
@@ -346,43 +399,78 @@ always @(posedge CLK28) begin
 end
 
 
-wire dtr;
-wire [7:0] acia_do;
-wire cts;
+	wire dtr, dsr;
+	wire [7:0] acia_do;
+	wire cts;
+	assign uart_data = (uartio && RnW) ? acia_do : 8'hff;
 
-glb6551 uart(
-  .RESET_N(~sreset),
-  .CLK(CLK28),
-  .RX_CLK(),
-  .RX_CLK_IN(1'b0),
-  .XTAL_CLK_IN(clk_18432en),
-  // one strobe per CPU cycle, otherwise FIFO pushes repeat for the whole bus cycle
-  .PH_2(cpuenable && !INWAIT && CORE_EN),
-  .DI(cpu_data),
-  .DO(acia_do),
-  .IRQ(acia_irq_n),
-  .CS({1'b0,uartio}),
-  .RW_N(RnW),
-  .RS(c16_addr[1:0]),
-  .TXDATA_OUT(RS232_TX),
-  .RXDATA_IN(RS232_RX),
-  .RTS(cts),
-  .CTS(cts),
-  .DCD(dtr),
-  .DTR(dtr),
-  .DSR(dtr),
+generate
+	if (!DEBUG) begin : uart
 
-  .serial_status_out(serial_status_out),
-  .serial_data_out_available(serial_data_out_available),
-  .serial_strobe_out(serial_strobe_out),
-  .serial_data_out(serial_data_out),
+		glb6551 uart(
+			.RESET_N(~sreset),
+			.CLK(CLK28),
+			.RX_CLK(),
+			.RX_CLK_IN(1'b0),
+			.XTAL_CLK_IN(clk_18432en),
+			// one strobe per CPU cycle, otherwise FIFO pushes repeat for the whole bus cycle
+			.PH_2(cpuenable && !INWAIT && CORE_EN),
+  			.DI(c16_data),
+  			.DO(acia_do),
+			.IRQ(acia_irq_n),
+			.CS({1'b0,uartio}),
+			.RW_N(RnW),
+			.RS(c16_addr[1:0]),
+			.TXDATA_OUT(RS232_TX),
+			.RXDATA_IN(RS232_RX),
+			.RTS(dsr),
+			.CTS(1'b0),
+			.DCD(dtr),
+			.DTR(dtr),
+			.DSR(dsr),
 
-  .serial_data_in_free(serial_data_in_free),
-  .serial_strobe_in(serial_strobe_in),
-  .serial_data_in(serial_data_in)
-);
+			.serial_status_out(serial_status_out),
+			.serial_data_out_available(serial_data_out_available),
+			.serial_strobe_out(serial_strobe_out),
+			.serial_data_out(serial_data_out),
 
-assign uart_data = (uartio && RnW) ? acia_do : 8'hff;
+			.serial_data_in_free(serial_data_in_free),
+			.serial_strobe_in(serial_strobe_in),
+			.serial_data_in(serial_data_in)
+		);
+
+	end else begin : debug_uart
+
+		wire txloop;
+
+		gen_uart_mos_6551 uart
+		(
+			.reset(sreset),
+			.clk(CLK28),
+			.clk_en(clk_18432en),
+			.din(c16_data),
+			.dout(acia_do),
+			.rnw(RnW),
+			.irq_n(acia_irq_n),
+			.cs(uartio),
+			.rs(c16_addr[1:0]),
+
+			.cts_n(1'b0),
+			.rx(txloop),
+			.tx(txloop),
+			.dcd_n(dtr),
+			.dsr_n(dsr),
+			.dtr_n(dtr),
+			.rts_n(dsr)
+		);
+
+		assign serial_status_out = 32'd0;
+		assign serial_data_out_available = 8'd0;
+		assign serial_data_out = 8'd0;
+		assign serial_data_in_free = 8'd0;
+		assign RS232_TX = 1'b1;
+	end
+endgenerate
 
 // C16 additional motherboard functions
 always @(posedge CLK28)	begin	// reset tries to emulate the length of a real reset
@@ -400,7 +488,7 @@ end
 
 // address and data bus latching
 assign c16_addr=(~mux)?c16_addrlatch:cpu_addr&ted_addr;			// C16 address bus
-assign c16_data=(mux)?c16_datalatch:cpu_data & ted_data & DIN & keyport_data & uart_data & sid_data & openbus_data; // C16 data bus
+assign c16_data=(mux)?c16_datalatch:cpu_data & ted_data & DIN & keyport_data & uart_data & sid_data & userport_data & openbus_data; // C16 data bus
 
 always @(posedge CLK28) begin
 	c16_datalatch<=c16_data;

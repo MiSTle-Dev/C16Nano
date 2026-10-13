@@ -357,7 +357,8 @@ signal sid_fc_lr       : std_logic_vector(12 downto 0);
 signal sid_ld_addr     : std_logic_vector(11 downto 0) := (others =>'0');
 signal sid_ld_data     : std_logic_vector(15 downto 0) := (others =>'0');
 signal sid_ld_wr       : std_logic := '0';
-signal load_flt       : std_logic := '0';
+signal load_flt        : std_logic := '0';
+signal userport_out    : std_logic_vector(7 downto 0);
 
 constant PRG_RESET_CLKS : integer := 28_000;      -- ~1 ms reset pulse
 constant PRG_BOOT_CLKS  : integer := 57_000_000;  -- ~2 s for KERNAL/BASIC cold start
@@ -1139,8 +1140,6 @@ cs_ram <= not c16_cas and cs0 and cs1;
 ram_dout <= ram_dout_i when cs_ram = '1' else x"FF";
 kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = "00" or kern = '1') else x"FF";
 basic_dout <= basic_dout_i when cs0 = '0' and  roml = "00" else x"FF";
-cass_io_sel <= '1' when c16_addr(15 downto 4) = 12x"FD1" else '0';
-cass_dout <= "11111" & (not cass_io_sel or (not tape_adc_act and cass_sense)) & "11";
 
 fl_dout <= ram_dout_i when cs0 = '0' and roml = "10" else x"FF";
 fh_dout <= ram_dout_i when cs1 = '0' and romh = "10" and kern = '0' else x"FF";
@@ -1148,7 +1147,7 @@ cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = "01" else x"F
 carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = "01" and kern = '0' else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout
-           and fl_dout and fh_dout and cass_dout;
+           and fl_dout and fh_dout;
 
 sys_reset <= system_reset(1) or system_reset(0) or not pll_locked or not flash_lock or detach_reset or rom_reset;
 reset <= sys_reset or cart_reset or prg_reset;
@@ -1183,6 +1182,9 @@ dl_active <= ioctl_download and not prg_hold;
 sid_fc_lr <= std_logic_vector(to_unsigned(16#600#, sid_fc_lr'length) - unsigned("000" & system_sid_fc_offset & "0000000")) when system_sid_filter(2) = '1' else (others => '0');
 
  c16_inst: entity work.c16 
+ generic map (
+    DEBUG => '0'
+ )
  port map 
  (
 	CLK28    => clk_sys,
@@ -1213,8 +1215,11 @@ sid_fc_lr <= std_logic_vector(to_unsigned(16#600#, sid_fc_lr'length) - unsigned(
 
 	cass_mtr => cass_motor,
 	cass_in  => cass_read,
-	cass_aud => cass_read and  not cass_sense and not cass_motor,
+	cass_aud => cass_read and not cass_sense and not cass_motor,
 	cass_out => cass_write,
+
+	userport_in => std_logic_vector'("11111" & cass_sense & "11"),
+	userport_out => userport_out,
 
 	JOY0     => joyB when system_joyswap = '1' else joyA,
 	JOY1     => joyA when system_joyswap = '1' else joyB,
