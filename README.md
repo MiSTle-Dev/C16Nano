@@ -33,6 +33,7 @@ This port has the following changes and enhancements:
 [USB XBOX 360 Controller](https://en.wikipedia.org/wiki/Xbox_360_controller) as Joystick
 * Joystick emulation on Keyboard Numpad
 * [6551 UART](https://en.wikipedia.org/wiki/MOS_Technology_6551) WIFI / LAN Modem Interface to FPGA-Companion up to 19200 Baud
+* [SID](https://en.wikipedia.org/wiki/MOS_Technology_6581) revision 6581 or 8580 selectable
 
 Original C16 core by [Istvan Hegedus](https://github.com/ishe). See also the [hackaday](https://hackaday.io/project/11460-fpgated) article. 
 
