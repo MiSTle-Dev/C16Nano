@@ -140,6 +140,41 @@
  <listentry label="Off" value="0"/>
  <listentry label="On" value="1"/>
       </list>
+      <list label="SID:" id="O" default="0">
+ <listentry label="6581" value="0"/>
+ <listentry label="8580" value="1"/>
+      </list>
+      <list label="SID Digifix:" id="U" default="0">
+ <listentry label="Off" value="0"/>
+ <listentry label="On" value="1"/>
+      </list>
+      <list label="SID card:" id="K" default="0">
+ <listentry label="Off" value="0"/>
+ <listentry label="On" value="1"/>
+      </list>
+      <list label="SID Card Mode:" id="#" default="0">
+ <listentry label="Plus/4" value="0"/>
+ <listentry label="C64" value="1"/>
+      </list>
+      <list label="SID Ports:" id="6" default="0">
+ <listentry label="Mirror" value="0"/>
+ <listentry label="Split" value="1"/>
+      </list>
+      <list label="SID Filter:" id="H" default="0">
+ <listentry label="Default" value="0"/>
+ <listentry label="Custom 1" value="1"/>
+ <listentry label="Custom 2" value="2"/>
+ <listentry label="Custom 3" value="3"/>
+ <listentry label="Adjustable" value="4"/>
+      </list>
+      <list label="SID Fc Ofs:" id=">" default="0">
+ <listentry label="0" value="0"/>
+ <listentry label="1" value="1"/>
+ <listentry label="2" value="2"/>
+ <listentry label="3" value="3"/>
+ <listentry label="4" value="4"/>
+ <listentry label="5" value="5"/>
+      </list>
  <button label="C1541 Reset" action="c1541_reset_hide"/>
  <button label="Cold Boot" action="cold_reset_hide"/>
     </menu>
@@ -150,6 +185,7 @@
       <fileselector label="BIN KERNAL:" ext="bin" index="3"/>
       <fileselector label="TAP TAPE:" ext="tap" index="4"/> 
       <fileselector label="Function ROM:" ext="bin" index="5"/>
+      <fileselector label="FLT FILTER:" ext="flt" index="6"/>
       <list label="Disk prot.:" id="P" default="0">
 	<listentry label="None" value="0"/>
 	<listentry label="8:" value="1"/>
@@ -169,9 +205,10 @@
       </list>
       <list label="Volume:" id="A" default="2">
 	<listentry label="Mute" value="0"/>
-	<listentry label="33%" value="1"/>
-	<listentry label="66%" value="2"/>
-	<listentry label="100%" value="3"/>
+     <listentry label="25%" value="1"/>
+     <listentry label="50%" value="2"/>
+     <listentry label="75%" value="3"/>
+     <listentry label="100%" value="4"/>
       </list>
       <button label="Save settings" action="save"/>
     </menu>

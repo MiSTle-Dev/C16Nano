@@ -30,7 +30,9 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module C16
+module C16 #(
+	parameter DEBUG = 1'b0
+)
 (
 	input         CLK28,
 	input         RESET,
@@ -45,6 +47,8 @@ module C16
 	output  [3:0] RED,
 	output  [3:0] GREEN,
 	output  [3:0] BLUE,
+	input   [1:0] tvmode,
+	input         wide,	
 
 	output        refresh,
 	output        RnW,
@@ -75,7 +79,6 @@ module C16
 	output        IEC_ATNOUT,
 	output        IEC_RESET,
 
-	output [15:0] sound,
 	input   [1:0] sid_type,
 
 	output        PAL,
@@ -91,13 +94,33 @@ module C16
 
 	input         RS232_RX,
 	output        RS232_TX,
-	output reg    sreset
+
+	output reg    sreset,
+
+	output [15:0] audio_l,
+	output [15:0] audio_r,
+	input         sid_enabled,
+	input   [1:0] sid_ver,
+	input   [3:0] sid_cfg,
+	input   [1:0] sid_filter,
+	input  [12:0] sid_fc_off_l,
+	input  [12:0] sid_fc_off_r,
+	input         sid_digifix,
+	input         sid_mode,
+	input         sid_c64,
+
+	input  [11:0] sid_ld_addr,
+	input  [15:0] sid_ld_data,
+	input         sid_ld_wr,
+
+	input  [7:0]  userport_in,
+	output [7:0]  userport_out
 );
 
 wire [15:0] c16_addr;
 wire [15:0] ted_addr;
 wire [15:0] cpu_addr;
-wire [7:0] c16_data,ted_data,cpu_data,port_in,port_out,keyport_data,uart_data;
+wire [7:0] c16_data,ted_data,cpu_data,port_in,port_out,keyport_data,uart_data, userport_data;
 wire [7:0] keyboard_row,kbus,kbus_kbd;
 wire [6:0] c16_color;
 wire cpuenable;
@@ -106,6 +129,7 @@ reg [7:0] c16_datalatch;
 reg [15:0] c16_addrlatch;
 wire keyboardio;
 wire uartio;
+wire userportio;
 //reg sreset=1'b0;
 reg [23:0] resetcounter=24'b0;
 wire irq1;
@@ -113,7 +137,9 @@ wire keyreset;
 
 // wire joysticks 
 wire [4:0] joy0_sel = (!c16_data[2])?{!JOY0[4],!JOY0[0],!JOY0[1],!JOY0[2],!JOY0[3]}:5'h1f;
+//wire [4:0] joy0_sel = (!c16_data[2])?{5'h00}:5'h1f; // debug loop
 wire [4:0] joy1_sel = (!c16_data[1])?{!JOY1[4],!JOY1[0],!JOY1[1],!JOY1[2],!JOY1[3]}:5'h1f;
+//wire [4:0] joy1_sel = (!c16_data[1])?{5'h00}:5'h1f; // debug loop
 assign kbus[3:0] = kbus_kbd[3:0] & joy0_sel[3:0] & joy1_sel[3:0];
 assign kbus[5:4] = kbus_kbd[5:4]; // no joystick line connected here
 assign kbus[6] = kbus_kbd[6] & joy0_sel[4];
@@ -140,14 +166,104 @@ mos8501 cpu
 );
 
 // -----------------------------------------------------------------------
-//wire [16:0] mix_audio = {ted_audio,ted_audio,ted_audio} + {cass_aud, 10'd0};
-//assign sound = ($signed(mix_audio) > $signed(17'd32767)) ? 16'd32767 : ($signed(mix_audio) < $signed(-17'd32768)) ? $signed(-16'd32768) : mix_audio[15:0];
+// internal SID Card enhancement
+// -----------------------------------------------------------------------
 
-assign sound=digi_sound;
+wire        ce_sid;
+wire  [1:0] sid_cs;
+wire        sid_we;
+wire  [7:0] sid_data;
+wire  [7:0] sid_dout;
+wire  [7:0] digi_l, digi_r;
+wire  [3:0] sid_card_cfg;
+
+sid_card sid_card
+(
+	.clk(CLK28),
+	.reset(sreset),
+
+	.enabled(sid_enabled),
+	.c64(sid_c64),
+	.split(sid_mode),
+	.pal(PAL),
+	.sid_ver(sid_ver[0]),
+
+	.mux(mux),
+	.addr(c16_addr),
+	.rnw(RnW),
+	.data_in(cpu_data),
+	.sid_dout(sid_dout),
+
+	.sid_cs(sid_cs),
+	.sid_we(sid_we),
+	.data_out(sid_data),
+
+	.ce_sid(ce_sid),
+	.digi_l(digi_l),
+	.digi_r(digi_r),
+	.cfg(sid_card_cfg)
+);
+
+wire [17:0] sid_audio_l;
+wire [17:0] sid_audio_r;
+
+sid_top sid
+(
+	.reset(sreset),
+	.clk(CLK28),
+	.ce_1m(ce_sid),
+	
+	.cs(sid_cs),
+	.we(sid_we),
+	.addr(c16_addr[4:0]),
+	.data_in(cpu_data),
+	.data_out(sid_dout),
+
+	.audio_l(sid_audio_l),
+	.audio_r(sid_audio_r),
+
+	.ext_in_l({sid_ver[0] & sid_digifix, 17'd0}),
+	.ext_in_r({sid_ver[1] & sid_digifix, 17'd0}),
+
+	.filter_en(sid_filter),
+	.mode(sid_ver),
+	.cfg(sid_cfg),
+
+	.fc_offset_l(sid_fc_off_l),
+	.fc_offset_r(sid_fc_off_r),
+
+	.ld_clk(CLK28),
+	.ld_data(sid_ld_data),
+	.ld_addr(sid_ld_addr),
+	.ld_wr(sid_ld_wr)
+);
 
 // -----------------------------------------------------------------------
 
-wire signed [15:0] digi_sound;
+reg [15:0] alo, aro;
+always @(posedge CLK28) begin
+	reg [17:0] alm, arm;
+
+	alm <= {{2{ted_digi[15]}}, ted_digi}
+	     + (sid_enabled ? {{2{sid_audio_l[17]}}, sid_audio_l[17:2]} : 18'd0)
+	     + {3'b000, digi_l, 7'd0}
+	     + {cass_aud, 10'd0};
+
+	arm <= {{2{ted_digi[15]}}, ted_digi}
+	     + (sid_enabled ? {{2{sid_audio_r[17]}}, sid_audio_r[17:2]} : 18'd0)
+	     + {3'b000, digi_r, 7'd0}
+	     + {cass_aud, 10'd0};
+
+	alo <= (&alm[17:15] | ~|alm[17:15]) ? alm[15:0] : {alm[17], {15{~alm[17]}}};
+	aro <= (&arm[17:15] | ~|arm[17:15]) ? arm[15:0] : {arm[17], {15{~arm[17]}}};
+end
+
+assign audio_l = alo;
+assign audio_r = aro;
+
+// -----------------------------------------------------------------------
+
+wire signed [15:0] ted_digi;
 // TED 8360 instance	
 ted mos8360
 (
@@ -158,14 +274,14 @@ ted mos8360
 	.addr_out(ted_addr),
 	.data_in(c16_data),
 	.data_out(ted_data),
-	.cpuclk(),
 	.rw(RnW),
 	.color(c16_color),
 	.csync(CSYNC),
 	.hsync(HSYNC),
 	.vsync(VSYNC),
+	.wide(wide),
 	.hblank(HBLANK),
-	.vblank(VBLANK),
+	.vblank_out(VBLANK),
 	.irq(irq_n),
 	.ba(rdy),
 	.mux(mux),
@@ -176,12 +292,10 @@ ted mos8360
 	.aec(aec),
 	.k(kbus),
 	.snd(),
-	.digi_sound(digi_sound),
+	.digi_sound(ted_digi),
 	.pal(PAL),
+    .tvmode(tvmode),
 	.cpuenable(cpuenable),
-	.burst(),
-	.even(),
-	.data_oe(),
 	.refresh_o(refresh)
 );
 
@@ -205,19 +319,54 @@ c16_keymatrix keyboard
 	.kbus(kbus_kbd)
 );
 
+wire [7:0] kbd_loopback;
 mos6529 keyport
 (
 	.clk(CLK28),
 	.data_in(c16_data),
 	.data_out(keyport_data),
-	.port_in(keyboard_row),	// keyport 6529 in C16 is unidirectional however if we read it the last written data is read back so we feed back its output.
+	.port_in(kbd_loopback),
 	.port_out(keyboard_row),
 	.rw(RnW),
 	.cs(keyboardio)
 );
+assign kbd_loopback = keyboard_row;
+
+generate
+	if (!DEBUG) begin : uart
+
+mos6529 userport
+(
+	.clk(CLK28),
+	.data_in(c16_data),
+	.data_out(userport_data),
+	.port_in(userport_in), // bit 2 cass_sense
+	.port_out(userport_out),
+	.rw(RnW),
+	.cs(userportio)
+);
+
+	end else begin : debug_uart
+
+wire [7:0] user_loopback;
+
+mos6529 userport
+(
+	.clk(CLK28),
+	.data_in(c16_data),
+	.data_out(userport_data),
+	.port_in(user_loopback),
+	.port_out(userport_out),
+	.rw(RnW),
+	.cs(userportio)
+);
+assign user_loopback = {userport_out[3:0], userport_out[3:0]};
+	end
+endgenerate
 
 assign keyboardio=(c16_addr[15:4]==12'hfd3); // as we don't have PLA, keyport is identified here
 assign uartio=(c16_addr[15:4]==12'hfd0); // 6551
+assign userportio=(c16_addr[15:4]==12'hfd1); // user port
 
 reg clk_18432en;
 reg  [31:0] clk_cnt_uart;
@@ -240,43 +389,78 @@ always @(posedge CLK28) begin
 end
 
 
-wire dtr;
-wire [7:0] acia_do;
-wire cts;
+	wire dtr, dsr;
+	wire [7:0] acia_do;
+	wire cts;
+	assign uart_data = (uartio && RnW) ? acia_do : 8'hff;
 
-glb6551 uart(
-  .RESET_N(~sreset),
-  .CLK(CLK28),
-  .RX_CLK(),
-  .RX_CLK_IN(1'b0),
-  .XTAL_CLK_IN(clk_18432en),
-  // one strobe per CPU cycle, otherwise FIFO pushes repeat for the whole bus cycle
-  .PH_2(cpuenable && !INWAIT && CORE_EN),
-  .DI(cpu_data),
-  .DO(acia_do),
-  .IRQ(acia_irq_n),
-  .CS({1'b0,uartio}),
-  .RW_N(RnW),
-  .RS(c16_addr[1:0]),
-  .TXDATA_OUT(RS232_TX),
-  .RXDATA_IN(RS232_RX),
-  .RTS(cts),
-  .CTS(cts),
-  .DCD(dtr),
-  .DTR(dtr),
-  .DSR(dtr),
+generate
+	if (!DEBUG) begin : uart_serial
 
-  .serial_status_out(serial_status_out),
-  .serial_data_out_available(serial_data_out_available),
-  .serial_strobe_out(serial_strobe_out),
-  .serial_data_out(serial_data_out),
+		glb6551 uart(
+			.RESET_N(~sreset),
+			.CLK(CLK28),
+			.RX_CLK(),
+			.RX_CLK_IN(1'b0),
+			.XTAL_CLK_IN(clk_18432en),
+			// one strobe per CPU cycle, otherwise FIFO pushes repeat for the whole bus cycle
+			.PH_2(cpuenable && !INWAIT && CORE_EN),
+  			.DI(c16_data),
+  			.DO(acia_do),
+			.IRQ(acia_irq_n),
+			.CS({1'b0,uartio}),
+			.RW_N(RnW),
+			.RS(c16_addr[1:0]),
+			.TXDATA_OUT(RS232_TX),
+			.RXDATA_IN(RS232_RX),
+			.RTS(dsr),
+			.CTS(1'b0),
+			.DCD(dtr),
+			.DTR(dtr),
+			.DSR(dsr),
 
-  .serial_data_in_free(serial_data_in_free),
-  .serial_strobe_in(serial_strobe_in),
-  .serial_data_in(serial_data_in)
-);
+			.serial_status_out(serial_status_out),
+			.serial_data_out_available(serial_data_out_available),
+			.serial_strobe_out(serial_strobe_out),
+			.serial_data_out(serial_data_out),
 
-assign uart_data = (uartio && RnW) ? acia_do : 8'hff;
+			.serial_data_in_free(serial_data_in_free),
+			.serial_strobe_in(serial_strobe_in),
+			.serial_data_in(serial_data_in)
+		);
+
+	end else begin : debug_uart_serial
+
+		wire txloop;
+
+		gen_uart_mos_6551 uart
+		(
+			.reset(sreset),
+			.clk(CLK28),
+			.clk_en(clk_18432en),
+			.din(c16_data),
+			.dout(acia_do),
+			.rnw(RnW),
+			.irq_n(acia_irq_n),
+			.cs(uartio),
+			.rs(c16_addr[1:0]),
+
+			.cts_n(1'b0),
+			.rx(txloop),
+			.tx(txloop),
+			.dcd_n(dtr),
+			.dsr_n(dsr),
+			.dtr_n(dtr),
+			.rts_n(dsr)
+		);
+
+		assign serial_status_out = 32'd0;
+		assign serial_data_out_available = 8'd0;
+		assign serial_data_out = 8'd0;
+		assign serial_data_in_free = 8'd0;
+		assign RS232_TX = 1'b1;
+	end
+endgenerate
 
 // C16 additional motherboard functions
 always @(posedge CLK28)	begin	// reset tries to emulate the length of a real reset
@@ -294,7 +478,7 @@ end
 
 // address and data bus latching
 assign c16_addr=(~mux)?c16_addrlatch:cpu_addr&ted_addr;			// C16 address bus
-assign c16_data=(mux)?c16_datalatch:cpu_data&ted_data&DIN&keyport_data & uart_data &openbus_data; // C16 data bus
+assign c16_data=(mux)?c16_datalatch:cpu_data & ted_data & DIN & keyport_data & uart_data & sid_data & userport_data & openbus_data; // C16 data bus
 
 always @(posedge CLK28) begin
 	c16_datalatch<=c16_data;

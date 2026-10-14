@@ -38,7 +38,7 @@ module sysctrl (
   // values that can be configured by the user
   output reg [1:0]  system_reset,
   output reg [1:0]  system_scanlines,
-  output reg [1:0]  system_volume,
+  output reg [2:0]  system_volume,
   output reg [1:0]  system_screen,
   output reg [1:0]  system_floppy_wprot,
   output reg [3:0]  system_port_1,
@@ -46,6 +46,13 @@ module sysctrl (
   output reg [1:0]  system_dos_sel,
   output reg        system_1541_reset,
   output reg        system_model,
+  output reg        system_sid_ver,
+  output reg        system_sid_digifix,
+  output reg        system_sid_card,
+  output reg        system_sid_card_mode,
+  output reg        system_sid_ports,
+  output reg [2:0]  system_sid_filter,
+  output reg [2:0]  system_sid_fc_offset,
   output reg        system_tape_sound,
   output reg [1:0]  system_tv,
   output reg [1:0]  system_uart,
@@ -123,6 +130,13 @@ always @(posedge clk) begin
       system_ext_iec_en <= 2'b00;
       system_int_iec_drv <= 2'b00;
       system_run_prg <= 1'b1;
+      system_sid_ver <= 1'b0;
+      system_sid_digifix <= 1'b0;
+      system_sid_card <= 1'b0;
+      system_sid_card_mode <= 1'b0;
+      system_sid_ports <= 1'b0;
+      system_sid_filter <= 3'b000;
+      system_sid_fc_offset <= 3'b000;
    end else begin // if (reset)
       //  bring button state into local clock domain
       buttonsD <= buttons;
@@ -196,7 +210,7 @@ always @(posedge clk) begin
                     // Value "S": scanlines none(0), 25%(1), 50%(2) or 75%(3)
                     if(id == "S") system_scanlines <= data_in[1:0];
                     // Value "A": volume mute(0), 33%(1), 66%(2) or 100%(3)
-                    if(id == "A") system_volume <= data_in[1:0];
+                    if(id == "A") system_volume <= data_in[2:0];
                     // Value "W": standard(0), overscan(1), wide(2)
                     if(id == "W") system_screen <= data_in[1:0];
                     // Value "P": floppy write protecion None(0), A(1), B(2) both(3)
@@ -227,6 +241,16 @@ always @(posedge clk) begin
                     if(id == "3") system_int_iec_drv <= data_in[1:0];
                     //
                     if(id == "5") system_run_prg <= data_in[0];
+                    if(id == "6") system_sid_ports <= data_in[0];
+                    if(id == "K") system_sid_card <= data_in[0];
+                    if(id == "#") system_sid_card_mode <= data_in[0];
+                    if(id == "U") system_sid_digifix <= data_in[0];
+                    // sid version                             
+                    if(id == "O") system_sid_ver <= data_in[0];
+                    // SID Filter                                      
+                    if(id == "H") system_sid_filter <= data_in[2:0];   
+                    // SID FC Offset                                   
+                    if(id == ">") system_sid_fc_offset <= data_in[2:0];
                 end
             end
 

@@ -40,6 +40,13 @@
         <File path="src/misc/ws2812.v" type="file.verilog" enable="1"/>
         <File path="src/mos6529.v" type="file.verilog" enable="1"/>
         <File path="src/mos8501.v" type="file.verilog" enable="1"/>
+        <File path="src/sid/sid_dac.sv" type="file.verilog" enable="1"/>
+        <File path="src/sid/sid_envelope.sv" type="file.verilog" enable="1"/>
+        <File path="src/sid/sid_filter.sv" type="file.verilog" enable="1"/>
+        <File path="src/sid/sid_tables.sv" type="file.verilog" enable="1"/>
+        <File path="src/sid/sid_top.sv" type="file.verilog" enable="1"/>
+        <File path="src/sid/sid_voice.sv" type="file.verilog" enable="1"/>
+        <File path="src/sid_card.v" type="file.verilog" enable="1"/>
         <File path="src/tang/tn20k/sdram8.v" type="file.verilog" enable="1"/>
         <File path="src/ted.v" type="file.verilog" enable="1"/>
         <File path="src/uart6551/io_fifo.v" type="file.verilog" enable="1"/>

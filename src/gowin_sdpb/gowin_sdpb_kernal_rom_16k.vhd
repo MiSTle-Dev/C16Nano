@@ -1,11 +1,12 @@
---Copyright (C)2014-2025 Gowin Semiconductor Corporation.
+--Copyright (C)2014-2026 Gowin Semiconductor Corporation.
 --All rights reserved.
 --File Title: IP file
---Tool Version: V1.9.12 (64-bit)
+--Tool Version: V1.9.12.03
+--IP Version: 1.0
 --Part Number: GW2AR-LV18QN88C8/I7
 --Device: GW2AR-18
 --Device Version: C
---Created Time: Thu Oct 30 22:01:42 2025
+--Created Time: Sun Oct 11 22:28:28 2026
 
 library IEEE;
 use IEEE.std_logic_1164.all;

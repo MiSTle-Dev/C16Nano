@@ -38,17 +38,12 @@ module mos6529(
     input cs
     );
 
-reg [7:0] iodata=8'd0;
+reg [7:0] output_latch=8'd0;
 
-assign port_out=iodata;
-assign data_out=(cs & rw)?iodata:8'hff;
+assign port_out=output_latch;
+assign data_out=(cs & rw)?port_in:8'hff;
 
 always @(posedge clk)
-	begin
-	if(cs)
-		if(rw)
-			iodata<=port_in;
-		else
-			iodata<=data_in;
-	end
+	if(cs && !rw)
+		output_latch<=data_in;
 endmodule
