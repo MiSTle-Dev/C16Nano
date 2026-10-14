@@ -137,7 +137,9 @@ wire keyreset;
 
 // wire joysticks 
 wire [4:0] joy0_sel = (!c16_data[2])?{!JOY0[4],!JOY0[0],!JOY0[1],!JOY0[2],!JOY0[3]}:5'h1f;
+//wire [4:0] joy0_sel = (!c16_data[2])?{5'h00}:5'h1f; // debug loop
 wire [4:0] joy1_sel = (!c16_data[1])?{!JOY1[4],!JOY1[0],!JOY1[1],!JOY1[2],!JOY1[3]}:5'h1f;
+//wire [4:0] joy1_sel = (!c16_data[1])?{5'h00}:5'h1f; // debug loop
 assign kbus[3:0] = kbus_kbd[3:0] & joy0_sel[3:0] & joy1_sel[3:0];
 assign kbus[5:4] = kbus_kbd[5:4]; // no joystick line connected here
 assign kbus[6] = kbus_kbd[6] & joy0_sel[4];
@@ -317,26 +319,28 @@ c16_keymatrix keyboard
 	.kbus(kbus_kbd)
 );
 
-generate
-	if (!DEBUG) begin : uart
-
+wire [7:0] kbd_loopback;
 mos6529 keyport
 (
 	.clk(CLK28),
 	.data_in(c16_data),
 	.data_out(keyport_data),
-	.port_in(keyboard_row),	// keyport 6529 in C16 is unidirectional however if we read it the last written data is read back so we feed back its output.
+	.port_in(kbd_loopback),
 	.port_out(keyboard_row),
 	.rw(RnW),
 	.cs(keyboardio)
 );
+assign kbd_loopback = keyboard_row;
+
+generate
+	if (!DEBUG) begin : uart
 
 mos6529 userport
 (
 	.clk(CLK28),
 	.data_in(c16_data),
 	.data_out(userport_data),
-	.port_in(userport_in),
+	.port_in(userport_in), // bit 2 cass_sense
 	.port_out(userport_out),
 	.rw(RnW),
 	.cs(userportio)
@@ -356,21 +360,7 @@ mos6529 userport
 	.rw(RnW),
 	.cs(userportio)
 );
-assign user_loopback = userport_out;
-
-wire [7:0] key_loopback;
-
-mos6529 keyport
-(
-	.clk(CLK28),
-	.data_in(c16_data),
-	.data_out(keyport_data),
-	.port_in(key_loopback),	
-	.port_out(keyboard_row),
-	.rw(RnW),
-	.cs(keyboardio)
-);
-assign key_loopback = keyboard_row;
+assign user_loopback = {userport_out[3:0], userport_out[3:0]};
 	end
 endgenerate
 
@@ -405,7 +395,7 @@ end
 	assign uart_data = (uartio && RnW) ? acia_do : 8'hff;
 
 generate
-	if (!DEBUG) begin : uart
+	if (!DEBUG) begin : uart_serial
 
 		glb6551 uart(
 			.RESET_N(~sreset),
@@ -439,7 +429,7 @@ generate
 			.serial_data_in(serial_data_in)
 		);
 
-	end else begin : debug_uart
+	end else begin : debug_uart_serial
 
 		wire txloop;
 

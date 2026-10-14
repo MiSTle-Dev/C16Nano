@@ -246,7 +246,6 @@ signal cartl_dout       : std_logic_vector(7 downto 0);
 signal cartl_dout_i     : std_logic_vector(7 downto 0);
 signal carth_dout       : std_logic_vector(7 downto 0);
 signal carth_dout_i     : std_logic_vector(7 downto 0);
-signal cass_dout        : std_logic_vector(7 downto 0);
 signal dl_addr          : std_logic_vector(15 downto 0);
 signal tap_dl_addr      : std_logic_vector(22 downto 0);
 signal dl_data          : std_logic_vector(7 downto 0);
@@ -305,7 +304,6 @@ signal tap_rd          : std_logic;
 signal dram_data_ready : std_logic;
 signal tap_download_d  : std_logic := '0';
 signal tape_adc_act    : std_logic;
-signal cass_io_sel     : std_logic;
 signal sdram_cs        : std_logic;
 signal sdram_oe        : std_logic;
 signal sdram_wr        : std_logic;
@@ -1125,26 +1123,21 @@ begin
     if reset = '1' then
       romh <= "00";
       roml <= "00";
-    elsif model = '1' and 
-      old_mux = '1' and
-      c16_mux = '0' and 
-      c16_rnw = '0' and
-      c16_addr(15 downto 4) = 12x"FDD" then
+    elsif model = '1' and old_mux = '1' and c16_mux = '0' and c16_rnw = '0' and c16_addr(15 downto 4) = 12x"FDD" then
         romh <= c16_addr(3 downto 2);
         roml <= c16_addr(1 downto 0);
     end if;
   end if;
 end process;
 
-cs_ram <= not c16_cas and cs0 and cs1;
-ram_dout <= ram_dout_i when cs_ram = '1' else x"FF";
-kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = "00" or kern = '1') else x"FF";
-basic_dout <= basic_dout_i when cs0 = '0' and  roml = "00" else x"FF";
-
-fl_dout <= ram_dout_i when cs0 = '0' and roml = "10" else x"FF";
-fh_dout <= ram_dout_i when cs1 = '0' and romh = "10" and kern = '0' else x"FF";
-cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = "01" else x"FF";
-carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = "01" and kern = '0' else x"FF";
+cs_ram <= c16_cas or not cs0 or not cs1;
+ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
+kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
+basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
+fl_dout <= ram_dout_i when cs0 = '0' and roml = 2 else x"FF";
+fh_dout <= ram_dout_i when cs1 = '0' and romh = 2 and kern = '0' else x"FF";
+cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
+carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout
            and fl_dout and fh_dout;
@@ -1467,7 +1460,7 @@ dram_inst: entity work.sdram8
               '0' when dl_active = '1' else
               tap_rd when tap_read_state /= TAP_IDLE else
               sdram_rom_access when sdram_rom_access = '1' else
-              cs_ram;
+              not cs_ram;
 
   sdram_wr <= dl_wr when prg_download_access = '1' else
               dl_wr when crt_download_access = '1' else
