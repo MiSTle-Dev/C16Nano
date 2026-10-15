@@ -132,8 +132,6 @@ wire uartio;
 wire userportio;
 //reg sreset=1'b0;
 reg [23:0] resetcounter=24'b0;
-wire irq1;
-wire keyreset;
 
 // wire joysticks 
 wire [4:0] joy0_sel = (!c16_data[2])?{!JOY0[4],!JOY0[0],!JOY0[1],!JOY0[2],!JOY0[3]}:5'h1f;

@@ -8,7 +8,6 @@
 -------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.STD_LOGIC_UNSIGNED.ALL;
 use IEEE.numeric_std.ALL;
 
 entity c16nano_top is
@@ -84,7 +83,7 @@ attribute syn_keep of clk_pixel_x5      : signal is 1;
 
 signal audio_l       : std_logic_vector(15 downto 0);
 signal audio_r       : std_logic_vector(15 downto 0);
-signal addr         : std_logic_vector(15 downto 0);
+signal addr          : unsigned(15 downto 0);
 
 -- IEC
 signal iec_data_o  : std_logic;
@@ -130,6 +129,8 @@ signal fallback_active : std_logic;
 signal fallback_hsync_d : std_logic := '1';
 signal fallback_vsync_d : std_logic := '0';
 signal fallback_hold_counter : unsigned(21 downto 0) := (others => '0');
+signal joy0_core : std_logic_vector(4 downto 0);
+signal joy1_core : std_logic_vector(4 downto 0);
 
 signal mcu_start      : std_logic;
 signal mcu_sys_strobe : std_logic;
@@ -236,6 +237,7 @@ signal ram_we           : std_logic;
 signal old_cs           : std_logic;
 signal kernal0_dout     : std_logic_vector(7 downto 0);
 signal kernal0_dout_i   : std_logic_vector(7 downto 0);
+signal kernal_rom_ce    : std_logic;
 signal basic_dout       : std_logic_vector(7 downto 0);
 signal basic_dout_i     : std_logic_vector(7 downto 0);
 signal fh_dout          : std_logic_vector(7 downto 0);
@@ -247,7 +249,7 @@ signal cartl_dout_i     : std_logic_vector(7 downto 0);
 signal carth_dout       : std_logic_vector(7 downto 0);
 signal carth_dout_i     : std_logic_vector(7 downto 0);
 signal dl_addr          : std_logic_vector(15 downto 0);
-signal tap_dl_addr      : std_logic_vector(22 downto 0);
+signal tap_dl_addr      : unsigned(22 downto 0);
 signal dl_data          : std_logic_vector(7 downto 0);
 signal kern             : std_logic;
 signal model            : std_logic;
@@ -265,7 +267,7 @@ signal ioctl_dout       : std_logic_vector(7 downto 0);
 signal tvmode           : std_logic_vector(1 downto 0);
 signal c16_iec_reset_o  : std_logic;
 signal dl_wr            : std_logic;
-signal state            : std_logic_vector(7 downto 0) := x"00";
+signal state            : unsigned(7 downto 0) := (others => '0');
 signal palmode          : std_logic;
 signal clk32            : std_logic;
 attribute syn_keep of clk32 : signal is 1;
@@ -276,8 +278,8 @@ signal serial_tx_data   : std_logic_vector(7 downto 0);
 signal serial_rx_available : std_logic_vector(7 downto 0);
 signal serial_rx_strobe : std_logic;
 signal serial_rx_data   : std_logic_vector(7 downto 0);
-signal tap_play_addr   : std_logic_vector(22 downto 0);
-signal tap_last_addr   : std_logic_vector(22 downto 0);
+signal tap_play_addr   : unsigned(22 downto 0);
+signal tap_last_addr   : unsigned(22 downto 0);
 signal tap_version     : std_logic_vector(1 downto 0);
 signal tap_data        : std_logic_vector(7 downto 0);
 signal tap_data_in     : std_logic_vector(7 downto 0);
@@ -1068,11 +1070,15 @@ port map(
 
 --/////////////////   ROM   /////////////////////////
 
+kernal_rom_ce <= '1' when ioctl_wr = '1' and
+                          unsigned(ioctl_addr(22 downto 14)) = to_unsigned(0, 9) and
+                          load_rom = '1' else '0';
+
 kernal_inst: entity work.Gowin_SDPB_kernal_rom_16k
     port map (
         dout => kernal0_dout_i,
         clka => clk_sys,
-        cea => '1' when ioctl_wr = '1' and ioctl_addr(22 downto 14) = 0 and load_rom = '1' else '0',
+        cea => kernal_rom_ce,
         clkb => clk_sys,
         ceb => '1',
         reseta => '0',
@@ -1132,12 +1138,12 @@ end process;
 
 cs_ram <= c16_cas or not cs0 or not cs1;
 ram_dout <= ram_dout_i when cs_ram = '0' else x"FF";
-kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = 0 or kern = '1') else x"FF";
-basic_dout <= basic_dout_i when cs0 = '0' and  roml = 0 else x"FF";
-fl_dout <= ram_dout_i when cs0 = '0' and roml = 2 else x"FF";
-fh_dout <= ram_dout_i when cs1 = '0' and romh = 2 and kern = '0' else x"FF";
-cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = 1 else x"FF";
-carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = 1 and kern = '0' else x"FF";
+kernal0_dout <= kernal0_dout_i when cs1 = '0' and (romh = "00" or kern = '1') else x"FF";
+basic_dout <= basic_dout_i when cs0 = '0' and roml = "00" else x"FF";
+fl_dout <= ram_dout_i when cs0 = '0' and roml = "10" else x"FF";
+fh_dout <= ram_dout_i when cs1 = '0' and romh = "10" and kern = '0' else x"FF";
+cartl_dout <= ram_dout_i when cs0 = '0' and cartl = '1' and roml = "01" else x"FF";
+carth_dout <= ram_dout_i when cs1 = '0' and carth = '1' and romh = "01" and kern = '0' else x"FF";
 
 c16_din <= ram_dout and kernal0_dout and basic_dout and cartl_dout and carth_dout
            and fl_dout and fh_dout;
@@ -1173,6 +1179,9 @@ prg_hold <= prg_boot or (ioctl_download and load_prg and not old_download);
 dl_active <= ioctl_download and not prg_hold;
 
 sid_fc_lr <= std_logic_vector(to_unsigned(16#600#, sid_fc_lr'length) - unsigned("000" & system_sid_fc_offset & "0000000")) when system_sid_filter(2) = '1' else (others => '0');
+
+joy0_core <= joyB when system_joyswap = '1' else joyA;
+joy1_core <= joyA when system_joyswap = '1' else joyB;
 
  c16_inst: entity work.c16 
  generic map (
@@ -1214,8 +1223,8 @@ sid_fc_lr <= std_logic_vector(to_unsigned(16#600#, sid_fc_lr'length) - unsigned(
 	userport_in => std_logic_vector'("11111" & cass_sense & "11"),
 	userport_out => userport_out,
 
-	JOY0     => joyB when system_joyswap = '1' else joyA,
-	JOY1     => joyA when system_joyswap = '1' else joyB,
+	JOY0     => joy0_core,
+	JOY1     => joy1_core,
 
 	ps2_key  => std_logic_vector(key_strobe & not key(7) & '0' & key), -- [8] - extended, [9] - pressed, [10] - toggles with every press/release
 	key_play => open,
@@ -1300,13 +1309,13 @@ begin
     if ioctl_download = '1' and load_prg = '1' then
       state <= x"00";
       if ioctl_wr_d = '0' and ioctl_wr = '1' then
-        if ioctl_addr = 0 then
-          addr(7 downto 0) <= ioctl_dout;
-        elsif ioctl_addr = 1 then
-          addr(15 downto 8) <= ioctl_dout;
+        if unsigned(ioctl_addr) = to_unsigned(0, ioctl_addr'length) then
+          addr(7 downto 0) <= unsigned(ioctl_dout);
+        elsif unsigned(ioctl_addr) = to_unsigned(1, ioctl_addr'length) then
+          addr(15 downto 8) <= unsigned(ioctl_dout);
         else
           ioctl_wait <= '1';
-          dl_addr <= addr;
+          dl_addr <= std_logic_vector(addr);
           dl_data <= ioctl_dout;
           dl_wr   <= '1';
           addr    <= addr + 1;
@@ -1316,7 +1325,7 @@ begin
       if ioctl_wr_d = '0' and ioctl_wr = '1' then
         ioctl_wait <= '1';
         dl_addr <= ioctl_addr(15 downto 0);
-        tap_dl_addr <= ioctl_addr;
+        tap_dl_addr <= unsigned(ioctl_addr);
         if load_tap = '1' and unsigned(ioctl_addr) = 12 then
             tap_version <= ioctl_dout(1 downto 0);
         end if;
@@ -1344,14 +1353,14 @@ begin
     if state(7) = '0' and state(3 downto 0) = x"F" then
       dl_wr <= '1';
       case state(6 downto 4) is
-        when "000" => dl_addr <= x"002d"; dl_data <= addr(7 downto 0);
-        when "001" => dl_addr <= x"002e"; dl_data <= addr(15 downto 8);
-        when "010" => dl_addr <= x"002f"; dl_data <= addr(7 downto 0);
-        when "011" => dl_addr <= x"0030"; dl_data <= addr(15 downto 8);
-        when "100" => dl_addr <= x"0031"; dl_data <= addr(7 downto 0);
-        when "101" => dl_addr <= x"0032"; dl_data <= addr(15 downto 8);
-        when "110" => dl_addr <= x"009d"; dl_data <= addr(7 downto 0);
-        when others => dl_addr <= x"009e"; dl_data <= addr(15 downto 8);
+        when "000" => dl_addr <= x"002d"; dl_data <= std_logic_vector(addr(7 downto 0));
+        when "001" => dl_addr <= x"002e"; dl_data <= std_logic_vector(addr(15 downto 8));
+        when "010" => dl_addr <= x"002f"; dl_data <= std_logic_vector(addr(7 downto 0));
+        when "011" => dl_addr <= x"0030"; dl_data <= std_logic_vector(addr(15 downto 8));
+        when "100" => dl_addr <= x"0031"; dl_data <= std_logic_vector(addr(7 downto 0));
+        when "101" => dl_addr <= x"0032"; dl_data <= std_logic_vector(addr(15 downto 8));
+        when "110" => dl_addr <= x"009d"; dl_data <= std_logic_vector(addr(7 downto 0));
+        when others => dl_addr <= x"009e"; dl_data <= std_logic_vector(addr(15 downto 8));
       end case;
     end if;
 
@@ -1438,8 +1447,8 @@ dram_inst: entity work.sdram8
                         prg_finalize = '1' or
                         tap_read_state /= TAP_IDLE else '0';
 
-  sdram_rom_access <= '1' when (cs0 = '0' and (roml = 1 or roml = 2)) or
-                               (cs1 = '0' and (romh = 1 or romh = 2) and kern = '0') else '0';
+  sdram_rom_access <= '1' when (cs0 = '0' and (roml = "01" or roml = "10")) or
+                               (cs1 = '0' and (romh = "01" or romh = "10") and kern = '0') else '0';
 
   crt_download_access <= '1' when ioctl_download = '1' and load_crt = '1' and
                                   dl_addr(15 downto 14) /= "10" and
@@ -1471,9 +1480,9 @@ dram_inst: entity work.sdram8
               not c16_rnw when sdram_rom_access = '0' else
               '0';
 
-  sdram_addr <= std_logic_vector(TAP_ADDR + unsigned(tap_play_addr))
+  sdram_addr <= std_logic_vector(TAP_ADDR + tap_play_addr)
                   when tap_read_state /= TAP_IDLE else
-                std_logic_vector(TAP_ADDR + unsigned(tap_dl_addr))
+                std_logic_vector(TAP_ADDR + tap_dl_addr)
                   when tap_wr = '1' else
 
                 7x"00" & dl_addr
@@ -1486,14 +1495,14 @@ dram_inst: entity work.sdram8
                   when function_download_access = '1' else
 
                 std_logic_vector(FUNC_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
-                  when cs1 = '0' and romh = 2 and kern = '0' else
+                  when cs1 = '0' and romh = "10" and kern = '0' else
                 std_logic_vector(FUNC_ADDR + resize(unsigned(c16_addr(13 downto 0)), FUNC_ADDR'length))
-                  when cs0 = '0' and roml = 2 else
+                  when cs0 = '0' and roml = "10" else
 
                 std_logic_vector(CRT_ADDR + 16#4000# + resize(unsigned(c16_addr(13 downto 0)), CRT_ADDR'length))
-                  when cs1 = '0' and romh = 1 and kern = '0' else
+                  when cs1 = '0' and romh = "01" and kern = '0' else
                 std_logic_vector(CRT_ADDR + resize(unsigned(c16_addr(13 downto 0)), CRT_ADDR'length))
-                  when cs0 = '0' and roml = 1 else
+                  when cs0 = '0' and roml = "01" else
                 7x"00" & c16_addr;
 
   sdram_din <= dl_data when prg_download_access = '1' or
@@ -1507,7 +1516,7 @@ tap_reset <= '1' when reset = '1' or
                       tap_download = '1' or
                       tap_finish = '1' or
                       detach_reset = '1' or
-                      (cass_run = '1' and ((unsigned(tap_last_addr) - unsigned(tap_play_addr)) < 80))
+                      (cass_run = '1' and ((tap_last_addr - tap_play_addr) < 80))
                       else '0';
 tap_loaded <= '1' when tap_play_addr < tap_last_addr else '0';
 
@@ -1518,7 +1527,7 @@ begin
   if rising_edge(clk_sys) then
       if tap_reset = '1' then
         if tap_download = '1' then
-            tap_last_addr <= ioctl_addr + 2;
+            tap_last_addr <= unsigned(ioctl_addr) + 2;
         else
             tap_last_addr <= (others => '0');
         end if;
