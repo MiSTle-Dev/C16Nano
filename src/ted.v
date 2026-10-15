@@ -372,7 +372,7 @@ always @(posedge clk) if (clk_en || reset) // flip flop to signal external fetch
 		ext_fetch<=1;
 	end
 
-assign attr_fetch_line=(videoline>=0 && videoline<203);
+assign attr_fetch_line=(videoline<9'd203);
 
 //---------------------------------------------------------------------------
 // DRAM Refresh
@@ -1014,6 +1014,7 @@ always @(hcounter)
 	hpos_304=0;
 	hpos_312=0;
 	hpos_320=0;
+	hpos_321=0;
 	hpos_336=0;
 	hpos_343=0;
 	hpos_348=0;
@@ -1281,7 +1282,7 @@ always @(posedge clk) if (clk_en || reset) // latch pixelcolor and multiplex it 
 //---------------------------------------------------------------------------
 	
 // PAL/NTSC screen constants 
-assign pal = !tvmode ? !palreg : tvmode[0];
+assign pal = (tvmode == 2'b00) ? !palreg : tvmode[0];
 
 assign EOS = pal?9'd311:9'd261;					// End of Screen scanline
 assign VS_START = pal?9'd254:9'd229;			// Vertical sync start
@@ -1413,7 +1414,7 @@ always @(posedge clk) if (clk_en || reset) // Generating RAS, internal CAS and M
 assign lowrom=(addr_in[15:14]==2'b10)?1'b1:1'b0;						//$8000-$bfff		low rom area (Basic)
 assign highrom=(addr_in[15:14]==2'b11)?1'b1:1'b0;						//$c000-$ffff		high rom area (Kernal, IO and TED area)
 assign io=(addr_in[15:8]==8'hFD || addr_in[15:8]==8'hFE)?1'b1:1'b0;		//$fd00-$feff		IO space
-assign tedreg=(addr_in[15:6]==10'b1111111100 && (addr_in[5]==0 || addr_in[5:1]==7'b11111))?1'b1:1'b0;						//$ff00-$ff1f  & $ff3e-$ff3f		TED registers
+assign tedreg=(addr_in[15:6]==10'b1111111100 && (addr_in[5]==0 || addr_in[5:1]==5'b11111))?1'b1:1'b0; //$ff00-$ff1f & $ff3e-$ff3f TED registers
 
 //---------------------------------------------------------------------------
 // Generating TED address out
@@ -1574,15 +1575,15 @@ always @(posedge clk) if (clk_en || reset)
 				VIDEOBASE:	// $FF14
 							vmbase<=data_in[7:3];
 				BGCOLOR0:	// $FF15 , color change at cycle start, emulating white pixel bug (for all 5 color registers)
-							bgcolor0<=8'hff;
+							bgcolor0<=7'h7f;
 				BGCOLOR1:	// $FF16
-							bgcolor1<=8'hff;
+							bgcolor1<=7'h7f;
 				BGCOLOR2:	// $FF17
-							bgcolor2<=8'hff;
+							bgcolor2<=7'h7f;
 				BGCOLOR3:	// $FF18
-							bgcolor3<=8'hff;
+							bgcolor3<=7'h7f;
 				EXCOLOR:		// $FF19
-							excolor<=8'hff;
+							excolor<=7'h7f;
 				ROMEN:		ramen<=1'b0;
 				RAMEN:		ramen<=1'b1;
 				default:;
@@ -1763,7 +1764,8 @@ assign data_out=(datahold)?dataout_reg:8'hff;
 assign snd=(ch1audio ? digivolume : 5'd0)+(ch2audio ? digivolume : 5'd0); // mixing audio channel signals
 reg [15:0] dacvolume;
 
-assign digi_sound=(ch1audio ? dacvolume : 15'd0)+(ch2audio ? dacvolume : 15'd0);
+assign digi_sound = (ch1audio ? dacvolume : 16'd0) +
+                    (ch2audio ? dacvolume : 16'd0);
 
 always @(posedge clk) if (clk_en || reset) //	audio cycle counter divides single clock by 4
 	begin
