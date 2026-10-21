@@ -65,5 +65,5 @@ Have a look: [Wiki WIFI Modem](https://github.com/MiSTle-Dev/.github/wiki)
 > [!NOTE]
 > Don't forget to active the ``PETSCII`` character input mode if you are sending commands to the modem !
 
-Connect to you WIFI AP and have a try: ``ATD`` [bbs.retrocampus.com:6510](https://bbs.retrocampus.com) or just have a look at [telnetbbsguide](https://www.telnetbbsguide.com/bbs/software/image-bbs) and choose as you like.  
+Connect to you WIFI AP and have a try: CBM PESC-2 character set ``ATD`` [bbs.retrocampus.com:6510](https://bbs.retrocampus.com) or ASC-2 character set `ATD`` [bbs.retrocampus.com:6502](https://bbs.retrocampus.com) just have a look at [telnetbbsguide](https://www.telnetbbsguide.com/bbs/software/image-bbs) and choose as you like.  
 
