@@ -280,6 +280,7 @@ ted mos8360
 	.wide(wide),
 	.hblank(HBLANK),
 	.vblank_out(VBLANK),
+	.ce_pix(),
 	.irq(irq_n),
 	.ba(rdy),
 	.mux(mux),
@@ -289,10 +290,9 @@ ted mos8360
 	.cs1(CS1),
 	.aec(aec),
 	.k(kbus),
-	.snd(),
 	.digi_sound(ted_digi),
 	.pal(PAL),
-    .tvmode(tvmode),
+	.tvmode(tvmode),
 	.cpuenable(cpuenable),
 	.refresh_o(refresh)
 );
@@ -326,7 +326,8 @@ mos6529 keyport
 	.port_in(kbd_loopback),
 	.port_out(keyboard_row),
 	.rw(RnW),
-	.cs(keyboardio)
+	.cs(keyboardio),
+	.mode(1'b0) // latched
 );
 assign kbd_loopback = keyboard_row;
 
@@ -341,7 +342,8 @@ mos6529 userport
 	.port_in(userport_in), // bit 2 cass_sense
 	.port_out(userport_out),
 	.rw(RnW),
-	.cs(userportio)
+	.cs(userportio),
+	.mode(1'b1)
 );
 
 	end else begin : debug_uart
@@ -356,7 +358,8 @@ mos6529 userport
 	.port_in(user_loopback),
 	.port_out(userport_out),
 	.rw(RnW),
-	.cs(userportio)
+	.cs(userportio),
+	.mode(1'b1)
 );
 assign user_loopback = {userport_out[3:0], userport_out[3:0]};
 	end
