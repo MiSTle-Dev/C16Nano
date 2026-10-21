@@ -29,21 +29,27 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 module mos6529(
-	 input clk,
+    input clk,
     input [7:0] data_in,
     output wire [7:0] data_out,
     input [7:0] port_in,
     output wire [7:0] port_out,
     input rw,
-    input cs
+    input cs,
+    input mode
     );
 
 reg [7:0] output_latch=8'd0;
 
 assign port_out=output_latch;
-assign data_out=(cs & rw)?port_in:8'hff;
+assign data_out=(cs & rw)?mode ? port_in : output_latch:8'hff;
 
 always @(posedge clk)
-	if(cs && !rw)
-		output_latch<=data_in;
+	begin
+	if(cs)
+		if(rw)
+			output_latch<=port_in;
+		else
+			output_latch<=data_in;
+	end
 endmodule

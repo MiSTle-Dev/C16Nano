@@ -33,7 +33,7 @@ This port has the following changes and enhancements:
 [USB XBOX 360 Controller](https://en.wikipedia.org/wiki/Xbox_360_controller) as Joystick
 * Joystick emulation on Keyboard Numpad
 * [6551 UART](https://en.wikipedia.org/wiki/MOS_Technology_6551) WIFI / LAN Modem Interface to FPGA-Companion up to 19200 Baud
-* [SID](https://en.wikipedia.org/wiki/MOS_Technology_6581) revision 6581 or 8580 selectable
+* [NAE / CAE SID card](https://en.wikipedia.org/wiki/MOS_Technology_6581) revision 6581 or 8580 selectable
 
 Original C16 core by [Istvan Hegedus](https://github.com/ishe). See also the [hackaday](https://hackaday.io/project/11460-fpgated) article. 
 
@@ -57,3 +57,13 @@ A [Tape](https://en.wikipedia.org/wiki/Commodore_Datasette) *.TAP file can be lo
 Then select from OSD a *.tap file.    
 Screen will blank 'blue' and after a short period of time a filename will appear for some seconds.  
 Screen will blank 'blue' again until tape file is entirely loaded. It takes time...
+
+## RS232 Serial Interface <-> WIFI / LAN Modem
+
+Have a look: [Wiki WIFI Modem](https://github.com/MiSTle-Dev/.github/wiki)  
+
+> [!NOTE]
+> Don't forget to active the ``PETSCII`` character input mode if you are sending commands to the modem !
+
+Connect to you WIFI AP and have a try: ``ATD`` [bbs.retrocampus.com:6510](https://bbs.retrocampus.com) or just have a look at [telnetbbsguide](https://www.telnetbbsguide.com/bbs/software/image-bbs) and choose as you like.  
+
