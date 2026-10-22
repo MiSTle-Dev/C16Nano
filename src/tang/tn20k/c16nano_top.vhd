@@ -544,7 +544,11 @@ process(clk_sys)
         disk_g64_d <= disk_g64;
 
         if sd_img_mounted(0) = '1' then
-          img_present <= '0' when sd_img_size = x"00000000" else '1';
+          if unsigned(sd_img_size) = 0 then
+            img_present <= '0';
+          else
+            img_present <= '1';
+          end if;
         end if;
 
         if sd_img_mounted_d = '0' and sd_img_mounted(0) = '1' then
