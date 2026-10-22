@@ -39,23 +39,7 @@ module video
           output	   tmds_clk_n,
           output	   tmds_clk_p,
           output [2:0] tmds_d_n,
-          output [2:0] tmds_d_p,
-
-          // digital video out for lcd
-          output lcd_clk,
-          output lcd_hs_n,
-          output lcd_vs_n,
-          output lcd_de,
-          output [7:0] lcd_r,
-          output [7:0] lcd_g,
-          output [7:0] lcd_b,
-          output lcd_bl,
-
-         // audio
-          output hp_bck,
-          output hp_ws,
-          output hp_din,
-          output pa_en
+          output [2:0] tmds_d_p
  );
 
 /* -------------------- HDMI video and audio -------------------- */
