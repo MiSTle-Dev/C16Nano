@@ -205,7 +205,9 @@ sid_card sid_card
 wire [17:0] sid_audio_l;
 wire [17:0] sid_audio_r;
 
-sid_top sid
+sid_top #(
+	.DUAL(1)
+) sid
 (
 	.reset(sreset),
 	.clk(CLK28),
@@ -228,7 +230,11 @@ sid_top sid
 	.cfg(sid_cfg),
 
 	.fc_offset_l(sid_fc_off_l),
+	.pot_x_l(8'hff),
+	.pot_y_l(8'hff),
 	.fc_offset_r(sid_fc_off_r),
+	.pot_x_r(8'hff),
+	.pot_y_r(8'hff),
 
 	.ld_clk(CLK28),
 	.ld_data(sid_ld_data),
