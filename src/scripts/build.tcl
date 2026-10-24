@@ -56,7 +56,7 @@ add_file t65/T65_ALU.vhd
 add_file t65/T65_MCode.vhd
 add_file t65/T65_Pack.vhd
 add_file gowin_sdpb/gowin_sdpb_rom_16k.vhd
-add_file fifo_sc_hs/fifo_sc_hs.vhd
+add_file tang/tn20k/fifo_sc_top.vhd
 add_file c1530.vhd
 add_file tang/tn20k/sdram8.v
 add_file tang/tn20k/c16nano_top.vhd

@@ -1,10 +1,10 @@
 [General]
+file=fifo_sc_top
 ipc_version=4
-file=fifo_sc_hs
-module=FIFO_SC_HS_Top
+module=fifo_sc_top
 target_device=gw2ar18c-000
-type=fifo_sc_hs
-version=1.0
+type=fifo_sc
+version=3.0
 
 [Config]
 ALEMPTY=0
@@ -16,7 +16,6 @@ EN_ALEMPTY=false
 EN_ALFULL=false
 FWFT=false
 IMPL=0
-IO_INSERTION=false
 LANG=1
 OUTPUT_REG=false
 RDEN_CTRL=false

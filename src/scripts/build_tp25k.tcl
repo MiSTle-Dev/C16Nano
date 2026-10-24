@@ -56,7 +56,7 @@ add_file c1541/c1541_logic.vhd
 add_file c1541/c1541_sd.vhd
 add_file c1541/gcr_floppy.vhd
 add_file c1541/via6522.vhd
-add_file fifo_sc_hs/FIFO_SC_HS_Top_gw5a.vhd
+add_file fifo_sc_top/fifo_sc_top.vhd
 add_file gowin_prom/gowin_prom_basic.vhd
 add_file gowin_sdpb/gowin_sdpb_kernal_rom_16k_gw5a.vhd
 add_file gowin_sp/gowin_sp_2k.vhd

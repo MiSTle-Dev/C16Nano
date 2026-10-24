@@ -71,7 +71,7 @@ constant autostop_time: std_logic_vector(28 downto 0) := std_logic_vector(to_uns
 
 begin
 
-tap_fifo_inst: entity work.FIFO_SC_HS_Top
+tap_fifo_inst: entity work.fifo_sc_top
 	port map (
 		Data => host_tap_in,
 		Clk => clk32,

@@ -57,20 +57,20 @@
         <File path="c1541/c1541_sd.vhd" type="file.vhdl" enable="1"/>
         <File path="c1541/gcr_floppy.vhd" type="file.vhdl" enable="1"/>
         <File path="c1541/via6522.vhd" type="file.vhdl" enable="1"/>
-        <File path="fifo_sc_hs/FIFO_SC_HS_Top_gw5a.vhd" type="file.vhdl" enable="1"/>
+        <File path="fifo_sc_top/fifo_sc_top.vhd" type="file.vhdl" enable="1"/>
         <File path="gowin_prom/gowin_prom_basic.vhd" type="file.vhdl" enable="1"/>
         <File path="gowin_sdpb/gowin_sdpb_kernal_rom_16k_gw5a.vhd" type="file.vhdl" enable="1"/>
         <File path="gowin_sp/gowin_sp_2k.vhd" type="file.vhdl" enable="1"/>
         <File path="gowin_sp/gowin_sp_8k.vhd" type="file.vhdl" enable="1"/>
-        <File path="t65/T65.vhd" type="file.vhdl" enable="1"/>
-        <File path="t65/T65_ALU.vhd" type="file.vhdl" enable="1"/>
-        <File path="t65/T65_MCode.vhd" type="file.vhdl" enable="1"/>
-        <File path="t65/T65_Pack.vhd" type="file.vhdl" enable="1"/>
         <File path="mistle/gw5a_25/c16nano_top.vhd" type="file.vhdl" enable="1"/>
         <File path="mistle/gw5a_25/gowin_pll_flash.vhd" type="file.vhdl" enable="1"/>
         <File path="mistle/gw5a_25/gowin_pll_flash_mod.vhd" type="file.vhdl" enable="1"/>
         <File path="mistle/gw5a_25/gowin_pll_pal.vhd" type="file.vhdl" enable="1"/>
         <File path="mistle/gw5a_25/gowin_pll_pal_mod.vhd" type="file.vhdl" enable="1"/>
+        <File path="t65/T65.vhd" type="file.vhdl" enable="1"/>
+        <File path="t65/T65_ALU.vhd" type="file.vhdl" enable="1"/>
+        <File path="t65/T65_MCode.vhd" type="file.vhdl" enable="1"/>
+        <File path="t65/T65_Pack.vhd" type="file.vhdl" enable="1"/>
         <File path="mistle/gw5a_25/c16nano.cst" type="file.cst" enable="1"/>
         <File path="mistle/gw5a_25/c16nano.sdc" type="file.sdc" enable="1"/>
         <File path="mistle/gw5a_25/c16nano.gsc" type="file.gsc" enable="1"/>

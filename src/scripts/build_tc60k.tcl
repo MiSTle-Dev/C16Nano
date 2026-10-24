@@ -55,6 +55,7 @@ add_file c1541/c1541_logic.vhd
 add_file c1541/c1541_sd.vhd
 add_file c1541/gcr_floppy.vhd
 add_file c1541/via6522.vhd
+add_file fifo_sc_top/fifo_sc_top.vhd
 add_file gowin_dpb/gowin_dpb_64kram.vhd
 add_file gowin_pll/gowin_pll_60k_flash.vhd
 add_file gowin_pll/gowin_pll_60k_flash_mod.vhd
