@@ -537,7 +537,7 @@ always @(posedge clk) if (clk_en || reset)
 			end
 		else if(phicounter==7 && phi && ~t3stop && ~stopreg)           // when not loaded, decrement timer 3 at even cycle
 		    begin
-		        timer3<=timer3-1;
+		        timer3<=timer3-1'd1;
 		    end
 	end
 	

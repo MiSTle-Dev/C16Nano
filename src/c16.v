@@ -243,6 +243,7 @@ sid_top #(
 );
 
 // -----------------------------------------------------------------------
+wire signed [15:0] ted_digi;
 
 reg [15:0] alo, aro;
 always @(posedge CLK28) begin
@@ -266,8 +267,6 @@ assign audio_l = alo;
 assign audio_r = aro;
 
 // -----------------------------------------------------------------------
-
-wire signed [15:0] ted_digi;
 // TED 8360 instance	
 ted mos8360
 (
@@ -296,11 +295,13 @@ ted mos8360
 	.cs1(CS1),
 	.aec(aec),
 	.k(kbus),
+	.snd(),
 	.digi_sound(ted_digi),
 	.pal(PAL),
 	.tvmode(tvmode),
 	.cpuenable(cpuenable),
-	.refresh_o(refresh)
+	.refresh_o(refresh),
+	.cpuclk()
 );
 
 // Color decoder to 12bit RGB	
