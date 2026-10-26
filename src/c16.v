@@ -247,20 +247,20 @@ wire signed [15:0] ted_digi;
 
 reg [15:0] alo, aro;
 always @(posedge CLK28) begin
-	reg [17:0] alm, arm;
+	reg [18:0] alm, arm;
 
-	alm <= {{2{ted_digi[15]}}, ted_digi}
-	     + (sid_enabled ? {{2{sid_audio_l[17]}}, sid_audio_l[17:2]} : 18'd0)
+	alm <= {{3{ted_digi[15]}}, ted_digi}
+	     + (sid_enabled ? {sid_audio_l[17], sid_audio_l} : 19'd0)
 	     + {3'b000, digi_l, 7'd0}
 	     + {cass_aud, 10'd0};
 
-	arm <= {{2{ted_digi[15]}}, ted_digi}
-	     + (sid_enabled ? {{2{sid_audio_r[17]}}, sid_audio_r[17:2]} : 18'd0)
+	arm <= {{3{ted_digi[15]}}, ted_digi}
+	     + (sid_enabled ? {sid_audio_r[17], sid_audio_r} : 19'd0)
 	     + {3'b000, digi_r, 7'd0}
 	     + {cass_aud, 10'd0};
 
-	alo <= (&alm[17:15] | ~|alm[17:15]) ? alm[15:0] : {alm[17], {15{~alm[17]}}};
-	aro <= (&arm[17:15] | ~|arm[17:15]) ? arm[15:0] : {arm[17], {15{~arm[17]}}};
+	alo <= (&alm[18:15] | ~|alm[18:15]) ? alm[15:0] : {alm[18], {15{~alm[18]}}};
+	aro <= (&arm[18:15] | ~|arm[18:15]) ? arm[15:0] : {arm[18], {15{~arm[18]}}};
 end
 
 assign audio_l = alo;
